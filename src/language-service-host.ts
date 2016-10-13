@@ -123,7 +123,6 @@ export default class VersionedLanguageServiceHost implements ts.LanguageServiceH
     }
 
     addFile(name, content: string) {
-        console.error('add', name);
         this.entries.set(name, new ScriptEntry(content));
     }
 
