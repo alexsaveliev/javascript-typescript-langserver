@@ -3,31 +3,22 @@
 /// <reference path="../typings/async/async.d.ts"/>
 
 import * as path_ from 'path';
-import * as fs from 'fs';
 
 import * as ts from 'typescript';
 import {IConnection} from 'vscode-languageserver';
 import * as async from 'async';
 
 import * as FileSystem from './fs';
+import * as util from './util';
+
 /**
  * Script entry, allows to keep content in memory
  */
 class ScriptEntry {
     content: string;
-    version: number;
 
     constructor(content: string) {
         this.content = content;
-        this.version = 0;
-    }
-
-    /**
-     * Updates script entry with new content, increments version automatically
-     */
-    update(content: string) {
-        this.content = content;
-        this.version++;
     }
 }
 
@@ -46,7 +37,7 @@ export default class VersionedLanguageServiceHost implements ts.LanguageServiceH
     fs: FileSystem.FileSystem;
 
     constructor(root: string, strict: boolean, connection: IConnection) {
-        this.root = root;
+        this.root = util.normalizePath(root);
         this.strict = strict;
         this.entries = new Map<string, ScriptEntry>();
 
@@ -90,7 +81,7 @@ export default class VersionedLanguageServiceHost implements ts.LanguageServiceH
                     files.forEach(function (path) {
                         tasks.push(fetch(path))
                     });
-                    async.parallel(tasks, function (err) {
+                    async.parallelLimit(tasks, 100, function (err) {
                         console.error('files fetched in', (new Date().getTime() - start) / 1000.0);
                         return err ? reject(err) : resolve();
                     })
@@ -104,29 +95,23 @@ export default class VersionedLanguageServiceHost implements ts.LanguageServiceH
     }
 
     getScriptFileNames(): string[] {
-        return Array.from(this.entries.keys());
+        return [];
     }
 
     getScriptVersion(fileName: string): string {
-        let entry = this.entries.get(fileName);
-        return entry ? '' + entry.version : undefined;
+        return "1";
     }
 
     getScriptSnapshot(fileName: string): ts.IScriptSnapshot {
         let entry = this.entries.get(fileName);
         if (!entry) {
+            fileName = path_.posix.relative(this.root, fileName);
+            entry = this.entries.get(fileName);
+        }
+        if (!entry) {
             return undefined;
         }
-        if (this.strict || entry.content) {
-
-            return ts.ScriptSnapshot.fromString(entry.content);
-        }
-
-        const fullPath = this.resolvePath(fileName);
-        if (!fs.existsSync(fullPath)) {
-            return undefined;
-        }
-        return ts.ScriptSnapshot.fromString(fs.readFileSync(fullPath).toString());
+        return ts.ScriptSnapshot.fromString(entry.content);
     }
 
     getCurrentDirectory(): string {
@@ -138,12 +123,8 @@ export default class VersionedLanguageServiceHost implements ts.LanguageServiceH
     }
 
     addFile(name, content: string) {
-        let entry = this.entries.get(name);
-        if (entry) {
-            entry.update(content);
-        } else {
-            this.entries.set(name, new ScriptEntry(content));
-        }
+        console.error('add', name);
+        this.entries.set(name, new ScriptEntry(content));
     }
 
     removeFile(name) {
@@ -152,10 +133,6 @@ export default class VersionedLanguageServiceHost implements ts.LanguageServiceH
 
     hasFile(name) {
         return this.entries.has(name);
-    }
-
-    private resolvePath(p: string): string {
-        return path_.resolve(this.root, p);
     }
 
     private fetchDir(path: string): AsyncFunction<FileSystem.FileInfo[]> {
@@ -231,6 +208,7 @@ export default class VersionedLanguageServiceHost implements ts.LanguageServiceH
                 }
                 var configObject = jsonConfig.config;
                 // TODO: VFS - add support of includes/excludes
+
                 const parseConfigHost = {
                     useCaseSensitiveFileNames: true,
                     readDirectory: function(): string[] {
@@ -238,6 +216,9 @@ export default class VersionedLanguageServiceHost implements ts.LanguageServiceH
                     },
                     fileExists: function(): boolean {
                         return true
+                    },
+                    readFile: function(): string {
+                        return ''
                     }
                 };
                 

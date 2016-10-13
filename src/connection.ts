@@ -14,11 +14,9 @@ import {
     Location,
     Hover,
     WorkspaceSymbolParams,
-    DidOpenTextDocumentParams,
-    DidCloseTextDocumentParams,
     SymbolInformation,
     RequestType,
-    SymbolKind, Range
+    Range
 } from 'vscode-languageserver';
 
 import * as ts from 'typescript';
@@ -141,18 +139,6 @@ export default class Connection {
 
         this.connection.onRequest(ShutdownRequest.type, function () {
             return [];
-        });
-
-        this.connection.onDidOpenTextDocument((params: DidOpenTextDocumentParams) => {
-            let relpath = util.uri2relpath(params.textDocument.uri, workspaceRoot);
-            console.error('add file', workspaceRoot, '/', relpath);
-            service.addFile(relpath, params.textDocument.text);
-        });
-
-        this.connection.onDidCloseTextDocument((params: DidCloseTextDocumentParams) => {
-            let relpath = util.uri2relpath(params.textDocument.uri, workspaceRoot);
-            console.error('remove file', workspaceRoot, '/', relpath);
-            service.removeFile(relpath);
         });
 
         this.connection.onRequest(WorkspaceSymbolsRequest.type, (params: WorkspaceSymbolParamsWithLimit): Promise<SymbolInformation[]> => {

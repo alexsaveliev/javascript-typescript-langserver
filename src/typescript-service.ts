@@ -12,12 +12,9 @@ import VersionedLanguageServiceHost from './language-service-host';
 import ExportedSymbolsProvider from './exported-symbols-provider'
 import ExternalRefsProvider from './external-refs-provider';
 import WorkspaceSymbolsProvider from './workspace-symbols-provider';
-import * as FileSystem from './fs';
 
 var sanitizeHtml = require('sanitize-html');
 var JSONPath = require('jsonpath-plus');
-
-const pathDelimiter = "$";
 
 export default class TypeScriptService {
     services: ts.LanguageService;
@@ -60,7 +57,7 @@ export default class TypeScriptService {
             this.envDefs.push(JSON.parse(fs.readFileSync(path.join(__dirname, '../src/defs/node.json'), 'utf8')));
             this.envDefs.push(JSON.parse(fs.readFileSync(path.join(__dirname, '../src/defs/ecmascript.json'), 'utf8')));
         } catch (error) {
-            console.error("error = ", error);
+            console.error("error", error.stack || error);
         }
     }
 
@@ -142,7 +139,12 @@ export default class TypeScriptService {
                 return [];
             }
 
-            const offset: number = ts.getPositionOfLineAndCharacter(this.services.getProgram().getSourceFile(fileName), line, column);
+            const sourceFile = this.getSourceFile(fileName);
+            if (!sourceFile) {
+                return [];
+            }
+
+            const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
             return this.services.getDefinitionAtPosition(fileName, offset);
             // if (defs) {
             //     defs.forEach(def => {
@@ -159,7 +161,7 @@ export default class TypeScriptService {
             // }
             // return defs;
         } catch (exc) {
-            console.error("Exception occurred = ", exc);
+            console.error("Exception occurred", exc.stack || exc);
         }
     }
 
@@ -169,7 +171,12 @@ export default class TypeScriptService {
             return;
         }
 
-        const offset: number = ts.getPositionOfLineAndCharacter(this.services.getProgram().getSourceFile(fileName), line, column);
+        const sourceFile = this.getSourceFile(fileName);
+        if (!sourceFile) {
+            return;
+        }
+
+        const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
         return this.getExternalRefs().find(ref => {
             if (ref.file == fileName && ref.pos == offset) {
                 return true;
@@ -193,10 +200,15 @@ export default class TypeScriptService {
                 return null;
             }
 
-            const offset: number = ts.getPositionOfLineAndCharacter(this.services.getProgram().getSourceFile(fileName), line, column);
+            const sourceFile = this.getSourceFile(fileName);
+            if (!sourceFile) {
+                return null;
+            }
+
+            const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
             return this.services.getQuickInfoAtPosition(fileName, offset);
         } catch (exc) {
-            console.error("Exception occcurred = ", exc);
+            console.error("Exception occurred", exc.stack || exc);
         }
     }
 
@@ -207,26 +219,41 @@ export default class TypeScriptService {
                 return null;
             }
 
-            const offset: number = ts.getPositionOfLineAndCharacter(this.services.getProgram().getSourceFile(fileName), line, column);
+            const sourceFile = this.getSourceFile(fileName);
+            if (!sourceFile) {
+                return [];
+            }
+
+            const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
             // const offset: number = this.offset(fileName, line, column);
             return this.services.getReferencesAtPosition(fileName, offset);
         } catch (exc) {
-            console.error("Exception occcurred = ", exc);
+            console.error("Exception occurred", exc.stack || exc);
         }
     }
 
     getWorkspaceSymbols(query: string, limit?: number): ts.NavigateToItem[] {
-        let items: ts.NavigateToItem[] = this.services.getNavigateToItems(query, limit);
-        return items;
+        return this.services.getNavigateToItems(query, limit);
     }
 
     getPositionFromOffset(fileName: string, offset: number): Position {
-        let res = ts.getLineAndCharacterOfPosition(this.services.getProgram().getSourceFile(fileName), offset);
+
+        const sourceFile = this.getSourceFile(fileName);
+        if (!sourceFile) {
+            return null;
+        }
+        let res = ts.getLineAndCharacterOfPosition(sourceFile, offset);
         return Position.create(res.line, res.character);
     }
 
 
-    private resolvePath(p: string): string {
-        return path.resolve(this.root, p);
+    private getSourceFile(fileName: string) : ts.SourceFile {
+        const sourceFile = this.services.getProgram().getSourceFile(fileName);
+        if (sourceFile) {
+            return sourceFile;
+        }
+        // HACK (alexsaveliev) using custom method to add a file
+        this.services.getProgram().addFile(fileName);
+        return this.services.getProgram().getSourceFile(fileName);
     }
 }
