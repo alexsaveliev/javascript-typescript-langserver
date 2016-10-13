@@ -108,7 +108,7 @@ export default class Connection {
 
         function initialize() : Thenable<void> {
             if (!initialized) {
-                initialized = service.host.initialize(workspaceRoot);
+                initialized = service.projectManager.initialize();
             }
             return initialized;
         }
@@ -146,6 +146,8 @@ export default class Connection {
             return new Promise<SymbolInformation[]>(function (resolve, reject) {
                 initialize().then(function () {
                     let result = [];
+                    // TODO: restore
+                    /*
                     const init = new Date().getTime();
                     try {
                         if (params.query == "exported") {
@@ -188,6 +190,8 @@ export default class Connection {
                         console.error(params, e);
                         return resolve([]);
                     }
+                    */
+                    return resolve(result);
                 }, function (err) {
                     initialized = null;
                     return reject(err)
@@ -201,35 +205,8 @@ export default class Connection {
                 initialize().then(function () {
                     try {
                         const init = new Date().getTime();
-                        let reluri = util.uri2reluri(params.textDocument.uri, workspaceRoot);
-                        const defs: ts.DefinitionInfo[] = service.getDefinition(reluri, params.position.line, params.position.character);
-                        let result: Location[] = [];
-                        if (defs) {
-                            for (let def of defs) {
-                                // if (def['url']) {
-                                //TODO process external doc ref here
-                                //result.push(Location.create(def['url'], util.formEmptyRange()));
-                                // } else {
-                                let start = ts.getLineAndCharacterOfPosition(service.services.getProgram().getSourceFile(def.fileName), def.textSpan.start);
-                                let end = ts.getLineAndCharacterOfPosition(service.services.getProgram().getSourceFile(def.fileName), def.textSpan.start + def.textSpan.length);
-                                result.push(Location.create(util.path2uri(workspaceRoot, def.fileName), {
-                                    start: start,
-                                    end: end
-                                }));
-                                // }
-                            }
-                        } else {
-                            //check whether definition is external, if uri string returned, add this location
-                            // TODO
-                            /*
-                             let externalDef = connection.service.getExternalDefinition(params.textDocument.uri, params.position.line, params.position.character);
-                             if (externalDef) {
-                             let fileName = externalDef.file;
-                             let res = Location.create(util.formExternalUri(externalDef), util.formEmptyRange());
-                             result.push(res);
-                             }
-                             */
-                        }
+                        let reluri = util.uri2reluri(params.textDocument.uri, workspaceRoot);                        
+                        const result: Location[] = service.getDefinition(reluri, params.position.line, params.position.character);
                         const exit = new Date().getTime();
                         console.error('definition', params.textDocument.uri, params.position.line, params.position.character, 'total', (exit - enter) / 1000.0, 'busy', (exit - init) / 1000.0, 'wait', (init - enter) / 1000.0);
                         return resolve(result);
@@ -284,20 +261,8 @@ export default class Connection {
                     const init = new Date().getTime();
                     try {
                         // const refs: ts.ReferenceEntry[] = service.getReferences('file:///' + req.body.File, req.body.Line + 1, req.body.Character + 1);
-                        let reluri = util.uri2reluri(params.textDocument.uri, workspaceRoot);
-                        const refEntries: ts.ReferenceEntry[] = service.getReferences(reluri, params.position.line, params.position.character);
-                        const result: Location[] = [];
-                        if (refEntries) {
-                            for (let ref of refEntries) {
-                                let start = ts.getLineAndCharacterOfPosition(service.services.getProgram().getSourceFile(ref.fileName), ref.textSpan.start);
-                                let end = ts.getLineAndCharacterOfPosition(service.services.getProgram().getSourceFile(ref.fileName), ref.textSpan.start + ref.textSpan.length);
-                                result.push(Location.create(util.path2uri(workspaceRoot, ref.fileName), {
-                                    start: start,
-                                    end: end
-                                }));
-
-                            }
-                        }
+                        let reluri = util.uri2reluri(params.textDocument.uri, workspaceRoot);                        
+                        const result: Location[] = service.getReferences(reluri, params.position.line, params.position.character);
                         const exit = new Date().getTime();
                         console.error('references', params.textDocument.uri, params.position.line, params.position.character, 'total', (exit - enter) / 1000.0, 'busy', (exit - init) / 1000.0, 'wait', (init - enter) / 1000.0);
                         return resolve(result);

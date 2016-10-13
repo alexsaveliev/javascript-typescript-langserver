@@ -47,7 +47,7 @@ export default class ExportedSymbolsProvider {
             let sourceFile = node.getSourceFile();
             let fileName = sourceFile.fileName;
             let posInFile = name.getStart(sourceFile);
-            let type = self.service.services.getTypeDefinitionAtPosition(fileName, posInFile);
+            let type = self.service.projectManager.getService(fileName).getTypeDefinitionAtPosition(fileName, posInFile);
             let kind = "";
             if (type && type.length > 0) {
                 kind = type[0].kind;
@@ -238,7 +238,8 @@ export default class ExportedSymbolsProvider {
             }
         }
 
-        for (const sourceFile of this.service.services.getProgram().getSourceFiles()) {
+        // TODO: multiple projects support
+        for (const sourceFile of this.service.projectManager.getAnyService().getProgram().getSourceFiles()) {
             if (!sourceFile.hasNoDefaultLib && sourceFile.fileName.indexOf("node_modules") == -1) {
                 sourceFile.getChildren().forEach(child => {
                     collectExports(child);
@@ -246,7 +247,8 @@ export default class ExportedSymbolsProvider {
             }
         }
 
-        for (const sourceFile of this.service.services.getProgram().getSourceFiles()) {
+        // TODO: multiple projects support
+        for (const sourceFile of this.service.projectManager.getAnyService().getProgram().getSourceFiles()) {
             if (!sourceFile.hasNoDefaultLib && sourceFile.fileName.indexOf("node_modules") == -1) {
                 ts.forEachChild(sourceFile, collectExportedChildDeclaration);
             }

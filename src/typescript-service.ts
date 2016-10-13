@@ -4,10 +4,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
-import { IConnection, Position } from 'vscode-languageserver';
+import { IConnection, Position, Location } from 'vscode-languageserver';
 
 import * as util from './util';
-import VersionedLanguageServiceHost from './language-service-host';
+import ProjectManager from './project-manager';
 
 import ExportedSymbolsProvider from './exported-symbols-provider'
 import ExternalRefsProvider from './external-refs-provider';
@@ -17,39 +17,29 @@ var sanitizeHtml = require('sanitize-html');
 var JSONPath = require('jsonpath-plus');
 
 export default class TypeScriptService {
-    services: ts.LanguageService;
+
+    projectManager: ProjectManager;
     root: string;
-    externalRefs = null;
-    exportedEnts = null;
-    topLevelDecls = null;
-    exportedSymbolProvider: ExportedSymbolsProvider;
-    externalRefsProvider: ExternalRefsProvider;
-    workspaceSymbolProvider: WorkspaceSymbolsProvider;
 
-    host: VersionedLanguageServiceHost;
+    private externalRefs = null;
+    private exportedEnts = null;
+    private topLevelDecls = null;
+    private exportedSymbolProvider: ExportedSymbolsProvider;
+    private externalRefsProvider: ExternalRefsProvider;
+    private workspaceSymbolProvider: WorkspaceSymbolsProvider;
 
-    envDefs = [];
+    private envDefs = [];
 
     constructor(root: string, strict: boolean, connection: IConnection) {
         this.root = root;
-        this.host = new VersionedLanguageServiceHost(root, strict, connection);
+        this.projectManager = new ProjectManager(root, strict, connection);
 
-        // Create the language service files
-        this.services = ts.createLanguageService(this.host, ts.createDocumentRegistry());
         this.initEnvDefFiles();
 
         //initialize providers 
         this.exportedSymbolProvider = new ExportedSymbolsProvider(this);
         this.externalRefsProvider = new ExternalRefsProvider(this);
         this.workspaceSymbolProvider = new WorkspaceSymbolsProvider(this);
-    }
-
-    addFile(name, content: string) {
-        this.host.addFile(name, content);
-    }
-
-    removeFile(name: string) {
-        this.host.removeFile(name);
     }
 
     initEnvDefFiles() {
@@ -132,34 +122,31 @@ export default class TypeScriptService {
         return res;
     }
 
-    getDefinition(uri: string, line: number, column: number): ts.DefinitionInfo[] {
+    getDefinition(uri: string, line: number, column: number): Location[] {
         try {
             const fileName: string = util.uri2path(uri);
-            if (!this.host.hasFile(fileName)) {
-                return [];
-            }
 
-            const sourceFile = this.getSourceFile(fileName);
+            const service: ts.LanguageService = this.getService(fileName);
+            const sourceFile = this.getSourceFile(service, fileName);
             if (!sourceFile) {
                 return [];
             }
 
             const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
-            return this.services.getDefinitionAtPosition(fileName, offset);
-            // if (defs) {
-            //     defs.forEach(def => {
-            //         let fileName = def.fileName;
-            //         let name = def.name;
-            //         let container = def.containerName.toLowerCase();
-            //         if (fileName.indexOf("merged.lib.d.ts") > -1) {
-            //             let result = this.lookupEnvDef(name, container);
-            //             if (result) {
-            //                 def['url'] = result['!url'];
-            //             }
-            //         }
-            //     });
-            // }
-            // return defs;
+            const defs: ts.DefinitionInfo[] = service.getDefinitionAtPosition(fileName, offset);
+            const ret = [];
+            if (defs) {
+                for (let def of defs) {
+                    const sourceFile = service.getProgram().getSourceFile(def.fileName);
+                    const start = ts.getLineAndCharacterOfPosition(sourceFile, def.textSpan.start);
+                    const end = ts.getLineAndCharacterOfPosition(sourceFile, def.textSpan.start + def.textSpan.length);
+                    ret.push(Location.create(util.path2uri(this.root, def.fileName), {
+                        start: start,
+                        end: end
+                    }));
+                }
+            }
+            return ret;
         } catch (exc) {
             console.error("Exception occurred", exc.stack || exc);
         }
@@ -167,11 +154,10 @@ export default class TypeScriptService {
 
     getExternalDefinition(uri: string, line: number, column: number) {
         const fileName: string = util.uri2path(uri);
-        if (!this.host.hasFile(fileName)) {
-            return;
-        }
 
-        const sourceFile = this.getSourceFile(fileName);
+        const service: ts.LanguageService = this.getService(fileName);
+
+        const sourceFile = this.getSourceFile(service, fileName);
         if (!sourceFile) {
             return;
         }
@@ -196,49 +182,60 @@ export default class TypeScriptService {
     getHover(uri: string, line: number, column: number): ts.QuickInfo {
         try {
             const fileName: string = util.uri2path(uri);
-            if (!this.host.hasFile(fileName)) {
-                return null;
-            }
-
-            const sourceFile = this.getSourceFile(fileName);
+            const service: ts.LanguageService = this.getService(fileName);
+            const sourceFile = this.getSourceFile(service, fileName);
             if (!sourceFile) {
                 return null;
             }
-
             const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
-            return this.services.getQuickInfoAtPosition(fileName, offset);
+            return service.getQuickInfoAtPosition(fileName, offset);
         } catch (exc) {
             console.error("Exception occurred", exc.stack || exc);
         }
     }
 
-    getReferences(uri: string, line: number, column: number): ts.ReferenceEntry[] {
+    getReferences(uri: string, line: number, column: number): Location[] {
         try {
             const fileName: string = util.uri2path(uri);
-            if (!this.host.hasFile(fileName)) {
-                return null;
-            }
 
-            const sourceFile = this.getSourceFile(fileName);
+            const service: ts.LanguageService = this.getService(fileName);
+
+            const sourceFile = this.getSourceFile(service, fileName);
             if (!sourceFile) {
                 return [];
             }
 
             const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
             // const offset: number = this.offset(fileName, line, column);
-            return this.services.getReferencesAtPosition(fileName, offset);
+            const refs = service.getReferencesAtPosition(fileName, offset);
+            const ret = [];
+            if (refs) {
+                for (let ref of refs) {
+                    const sourceFile = service.getProgram().getSourceFile(ref.fileName);
+                    let start = ts.getLineAndCharacterOfPosition(sourceFile, ref.textSpan.start);
+                    let end = ts.getLineAndCharacterOfPosition(sourceFile, ref.textSpan.start + ref.textSpan.length);
+                    ret.push(Location.create(util.path2uri(this.root, ref.fileName), {
+                        start: start,
+                        end: end
+                    }));
+                }
+            }
+            return ret;
         } catch (exc) {
             console.error("Exception occurred", exc.stack || exc);
         }
     }
 
     getWorkspaceSymbols(query: string, limit?: number): ts.NavigateToItem[] {
-        return this.services.getNavigateToItems(query, limit);
+        // TODO: multiple projects?
+        const service: ts.LanguageService = this.projectManager.getAnyService();
+        return service.getNavigateToItems(query, limit);
     }
 
     getPositionFromOffset(fileName: string, offset: number): Position {
 
-        const sourceFile = this.getSourceFile(fileName);
+        const service: ts.LanguageService = this.getService(fileName);
+        const sourceFile = this.getSourceFile(service, fileName);
         if (!sourceFile) {
             return null;
         }
@@ -246,14 +243,20 @@ export default class TypeScriptService {
         return Position.create(res.line, res.character);
     }
 
-
-    private getSourceFile(fileName: string) : ts.SourceFile {
-        const sourceFile = this.services.getProgram().getSourceFile(fileName);
+    private getSourceFile(service: ts.LanguageService, fileName: string): ts.SourceFile {
+        if (!this.projectManager.hasFile(fileName)) {
+            return null;
+        }
+        const sourceFile = service.getProgram().getSourceFile(fileName);
         if (sourceFile) {
             return sourceFile;
         }
         // HACK (alexsaveliev) using custom method to add a file
-        this.services.getProgram().addFile(fileName);
-        return this.services.getProgram().getSourceFile(fileName);
+        service.getProgram().addFile(fileName);
+        return service.getProgram().getSourceFile(fileName);
+    }
+
+    private getService(fileName: string): ts.LanguageService {
+        return this.projectManager.getService(fileName);
     }
 }
