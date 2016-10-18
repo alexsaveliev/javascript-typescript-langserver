@@ -10,33 +10,37 @@ import * as async from 'async';
 
 import * as FileSystem from './fs';
 import * as util from './util';
+import * as match from './match-files';
 
 export default class ProjectsManager {
 
     private root: string;
     private strict: boolean;
-    private entries: Map<string, string>;
-    private fs: FileSystem.FileSystem;
 
     private defaultService: ts.LanguageService;
     private services: Map<string, ts.LanguageService>;
+    private hosts: Map<string, InMemoryLanguageServiceHost>;
+
+    private remoteFs: FileSystem.FileSystem;
+    private localFs: InMemoryFileSystem;
 
     constructor(root: string, strict: boolean, connection: IConnection) {
         this.root = util.normalizePath(root);
         this.strict = strict;
-        this.entries = new Map<string, string>();
         this.services = new Map<string, ts.LanguageService>();
+        this.hosts = new Map<string, InMemoryLanguageServiceHost>();
+        this.localFs = new InMemoryFileSystem(this.root);
 
         if (strict) {
-            this.fs = new FileSystem.RemoteFileSystem(connection)
+            this.remoteFs = new FileSystem.RemoteFileSystem(connection)
         } else {
-            this.fs = new FileSystem.LocalFileSystem(root)
+            this.remoteFs = new FileSystem.LocalFileSystem(root)
         }
         this.defaultService = ts.createLanguageService(new InMemoryLanguageServiceHost(root, {
             module: ts.ModuleKind.CommonJS,
             allowNonTsExtensions: false,
             allowJs: false
-        }, this.entries), ts.createDocumentRegistry());
+        }, this.localFs, []), ts.createDocumentRegistry());
     }
 
     initialize(): Promise<void> {
@@ -72,13 +76,13 @@ export default class ProjectsManager {
     }
 
     hasFile(name) {
-        return this.entries.has(name);
+        return this.localFs.fileExists(name);
     }
 
-    getService(fileName: string): ts.LanguageService {        
+    getService(fileName: string): ts.LanguageService {
         let dir = path_.posix.dirname(fileName);
         let service;
-        while (dir && dir != this.root) {            
+        while (dir && dir != this.root) {
             service = this.services.get(dir);
             if (service) {
                 return service;
@@ -86,15 +90,52 @@ export default class ProjectsManager {
             dir = path_.posix.dirname(dir);
             if (dir == '.') {
                 dir = '';
-            }            
+            }
         }
         service = this.services.get(dir);
         return service || this.defaultService;
     }
 
+    prepareService(fileName: string) {
+
+        const self = this;
+
+        let dir = path_.posix.dirname(fileName);
+        let host: InMemoryLanguageServiceHost;
+        let service;
+        while (dir && dir != this.root) {
+            host = this.hosts.get(dir);
+            if (host) {
+                service = this.services.get(dir);
+                break;
+            }
+            dir = path_.posix.dirname(dir);
+            if (dir == '.') {
+                dir = '';
+            }
+        }
+        if (!host) {
+            host = this.hosts.get(dir);
+            if (!host) {
+                return;
+            }
+            service = this.services.get(dir);
+        }
+        if (host.complete) {
+            return;
+        }
+        (host.getExpectedFiles() || []).forEach(function (fileName) {
+            const sourceFile = service.getProgram().getSourceFile(fileName);
+            if (!sourceFile) {
+                service.getProgram().addFile(fileName, self.localFs.readFile(fileName));
+            }
+        });
+        host.complete = true;
+    }
+
     getAnyService(): ts.LanguageService {
         let service = null;
-        this.services.forEach(function(v, k) {
+        this.services.forEach(function (v) {
             if (!service) {
                 service = v;
             }
@@ -105,7 +146,7 @@ export default class ProjectsManager {
     private fetchDir(path: string): AsyncFunction<FileSystem.FileInfo[]> {
         let self = this;
         return function (callback: (err?: Error, result?: FileSystem.FileInfo[]) => void) {
-            self.fs.readDir(path, (err?: Error, result?: FileSystem.FileInfo[]) => {
+            self.remoteFs.readDir(path, (err?: Error, result?: FileSystem.FileInfo[]) => {
                 if (result) {
                     result.forEach(function (fi) {
                         fi.Name_ = path_.posix.join(path, fi.Name_)
@@ -160,18 +201,18 @@ export default class ProjectsManager {
         this.fetchDir(path)(cb)
     }
 
-    private fetchContent(files: string[], callback: (err?: Error) => void) {        
+    private fetchContent(files: string[], callback: (err?: Error) => void) {
         let tasks = [];
         const self = this;
         const fetch = function (path: string): AsyncFunction<string> {
             return function (callback: (err?: Error, result?: string) => void) {
-                self.fs.readFile(path, (err?: Error, result?: string) => {
+                self.remoteFs.readFile(path, (err?: Error, result?: string) => {
                     if (err) {
                         console.error('Unable to fetch content of ' + path, err);
                         return callback(err)
                     }
                     const rel = path_.posix.relative(self.root, path);
-                    self.entries.set(rel, result);
+                    self.localFs.addFile(rel, result);
                     return callback()
                 })
             }
@@ -189,14 +230,14 @@ export default class ProjectsManager {
     private processProjects(callback: (err?: Error) => void) {
         let tasks = [];
         const self = this;
-        this.entries.forEach(function (v, k) {            
+        Object.keys(this.localFs.entries).forEach(function (k) {
             if (!/(^|\/)tsconfig\.json$/.test(k)) {
                 return;
             }
             if (/(^|\/)node_modules\//.test(k)) {
                 return;
             }
-            tasks.push(self.processProject(k, v));
+            tasks.push(self.processProject(k, self.localFs.entries[k]));
         });
         async.parallel(tasks, callback);
     }
@@ -210,18 +251,19 @@ export default class ProjectsManager {
                 return callback(new Error('Cannot parse ' + tsConfigPath + ': ' + jsonConfig.error.messageText));
             }
             const configObject = jsonConfig.config;
-            // TODO: VFS - add support of includes/excludes
             let dir = path_.posix.dirname(tsConfigPath);
             if (dir == '.') {
                 dir = '';
             }
             const base = dir || self.root;
-            const configParseResult = ts.parseJsonConfigFileContent(configObject, NoopParseConfigHost, base);
+            const configParseResult = ts.parseJsonConfigFileContent(configObject, self.localFs, base);
             console.error('Added project', tsConfigPath, dir);
-            self.services.set(dir, ts.createLanguageService(new InMemoryLanguageServiceHost(self.root,
+            const host = new InMemoryLanguageServiceHost(self.root,
                 configParseResult.options,
-                self.entries),
-                ts.createDocumentRegistry()));
+                self.localFs,
+                configParseResult.fileNames);
+            self.hosts.set(dir, host);
+            self.services.set(dir, ts.createLanguageService(host, ts.createDocumentRegistry()));
             callback();
         }
     }
@@ -229,14 +271,18 @@ export default class ProjectsManager {
 
 class InMemoryLanguageServiceHost implements ts.LanguageServiceHost {
 
+    complete: boolean;
+
     private root: string;
     private options: ts.CompilerOptions;
-    private entries: Map<string, string>;
+    private fs: InMemoryFileSystem;
+    private expectedFiles: string[];
 
-    constructor(root: string, options: ts.CompilerOptions, entries: Map<string, string>) {
+    constructor(root: string, options: ts.CompilerOptions, fs: InMemoryFileSystem, expectedFiles: string[]) {
         this.root = root;
         this.options = options;
-        this.entries = entries;
+        this.fs = fs;
+        this.expectedFiles = expectedFiles;
     }
 
     getCompilationSettings(): ts.CompilerOptions {
@@ -253,10 +299,10 @@ class InMemoryLanguageServiceHost implements ts.LanguageServiceHost {
     }
 
     getScriptSnapshot(fileName: string): ts.IScriptSnapshot {
-        let entry = this.entries.get(fileName);
+        let entry = this.fs.readFile(fileName);
         if (!entry) {
             fileName = path_.posix.relative(this.root, fileName);
-            entry = this.entries.get(fileName);
+            entry = this.fs.readFile(fileName);
         }
         if (!entry) {
             return undefined;
@@ -271,18 +317,83 @@ class InMemoryLanguageServiceHost implements ts.LanguageServiceHost {
     getDefaultLibFileName(options: ts.CompilerOptions): string {
         return ts.getDefaultLibFilePath(options);
     }
+
+    getExpectedFiles() {
+        return this.expectedFiles;
+    }
 }
 
-const NoopParseConfigHost = {
-    useCaseSensitiveFileNames: true,
-    readDirectory: function (): string[] {
-        return []
-    },
-    fileExists: function (): boolean {
-        return false
-    },
-    readFile: function (): string {
-        return ''
-    }
-};
+class InMemoryFileSystem implements ts.ParseConfigHost {
 
+    entries: any;
+
+    useCaseSensitiveFileNames: boolean;
+
+    private path: string;
+    private rootNode: any;
+
+    constructor(path: string) {
+        this.path = path;
+        this.entries = {};
+        this.rootNode = {};
+    }
+
+    addFile(path: string, content: string) {
+        this.entries[path] = content;
+        let node = this.rootNode;
+        path.split('/').forEach(function (component, i, components) {
+            const n = node[component];
+            if (!n) {
+                node[component] = i == components.length - 1 ? '*' : {};
+                node = node[component];
+            } else {
+                node = n;
+            }
+        });
+    }
+
+    fileExists(path: string): boolean {
+        return !!this.entries[path];
+    }
+
+    readFile(path: string): string {
+        return this.entries[path];
+    }
+
+    readDirectory(rootDir: string, extensions: string[], excludes: string[], includes: string[]): string[] {
+        const self = this;
+        return match.matchFiles(rootDir,
+            extensions,
+            excludes,
+            includes,
+            true,
+            this.path,
+            function () {
+                return self.getFileSystemEntries.apply(self, arguments);
+            });
+    }
+
+    getFileSystemEntries(path: string): match.FileSystemEntries {        
+        path = path_.posix.relative(this.path, path);        
+        const ret = { files: [], directories: [] };
+        let node = this.rootNode;
+        const components = path.split('/');
+        if (components.length != 1 || components[0]) {
+            components.forEach(function (component) {                
+                const n = node[component];
+                if (!n) {
+                    return ret;
+                }
+                node = n;
+            });
+        }
+        Object.keys(node).forEach(function (name) {
+            if (typeof node[name] == 'string') {
+                ret.files.push(name);
+            } else {
+                ret.directories.push(name);
+            }
+        });        
+        return ret;
+    }
+}

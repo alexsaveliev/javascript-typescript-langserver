@@ -205,6 +205,8 @@ export default class TypeScriptService {
                 return [];
             }
 
+            this.projectManager.prepareService(fileName);
+
             const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
             // const offset: number = this.offset(fileName, line, column);
             const refs = service.getReferencesAtPosition(fileName, offset);

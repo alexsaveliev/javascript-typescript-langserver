@@ -106,7 +106,7 @@ export default class Connection {
 
         let initialized: Thenable<void> = null;
 
-        function initialize() : Thenable<void> {
+        function initialize(): Thenable<void> {
             if (!initialized) {
                 initialized = service.projectManager.initialize();
             }
@@ -119,7 +119,7 @@ export default class Connection {
             return new Promise<InitializeResult>(function (resolve) {
                 if (params.rootPath) {
                     workspaceRoot = util.uri2path(params.rootPath);
-                    service = new TypeScriptService(workspaceRoot, strict, self.connection);                    
+                    service = new TypeScriptService(workspaceRoot, strict, self.connection);
                     resolve({
                         capabilities: {
                             // Tell the client that the server works in FULL text document sync mode
@@ -205,7 +205,7 @@ export default class Connection {
                 initialize().then(function () {
                     try {
                         const init = new Date().getTime();
-                        let reluri = util.uri2reluri(params.textDocument.uri, workspaceRoot);                        
+                        let reluri = util.uri2reluri(params.textDocument.uri, workspaceRoot);
                         const result: Location[] = service.getDefinition(reluri, params.position.line, params.position.character);
                         const exit = new Date().getTime();
                         console.error('definition', params.textDocument.uri, params.position.line, params.position.character, 'total', (exit - enter) / 1000.0, 'busy', (exit - init) / 1000.0, 'wait', (init - enter) / 1000.0);
@@ -260,8 +260,7 @@ export default class Connection {
                 initialize().then(function () {
                     const init = new Date().getTime();
                     try {
-                        // const refs: ts.ReferenceEntry[] = service.getReferences('file:///' + req.body.File, req.body.Line + 1, req.body.Character + 1);
-                        let reluri = util.uri2reluri(params.textDocument.uri, workspaceRoot);                        
+                        let reluri = util.uri2reluri(params.textDocument.uri, workspaceRoot);
                         const result: Location[] = service.getReferences(reluri, params.position.line, params.position.character);
                         const exit = new Date().getTime();
                         console.error('references', params.textDocument.uri, params.position.line, params.position.character, 'total', (exit - enter) / 1000.0, 'busy', (exit - init) / 1000.0, 'wait', (init - enter) / 1000.0);
