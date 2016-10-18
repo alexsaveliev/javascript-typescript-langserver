@@ -10,7 +10,7 @@ import { IConnection, Position, Location } from 'vscode-languageserver';
 import * as async from 'async';
 
 import * as util from './util';
-import ProjectManager from './project-manager';
+import * as pm from './project-manager';
 
 import ExportedSymbolsProvider from './exported-symbols-provider'
 import ExternalRefsProvider from './external-refs-provider';
@@ -21,7 +21,7 @@ var JSONPath = require('jsonpath-plus');
 
 export default class TypeScriptService {
 
-    projectManager: ProjectManager;
+    projectManager: pm.ProjectManager;
     root: string;
 
     private externalRefs = null;
@@ -35,7 +35,7 @@ export default class TypeScriptService {
 
     constructor(root: string, strict: boolean, connection: IConnection) {
         this.root = root;
-        this.projectManager = new ProjectManager(root, strict, connection);
+        this.projectManager = new pm.ProjectManager(root, strict, connection);
 
         this.initEnvDefFiles();
 
@@ -129,18 +129,18 @@ export default class TypeScriptService {
         try {
             const fileName: string = util.uri2path(uri);
 
-            const service: ts.LanguageService = this.getService(fileName);
-            const sourceFile = this.getSourceFile(service, fileName);
+            const configuration = this.projectManager.getConfiguration(fileName);
+            const sourceFile = this.getSourceFile(configuration, fileName);
             if (!sourceFile) {
                 return [];
             }
 
             const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
-            const defs: ts.DefinitionInfo[] = service.getDefinitionAtPosition(fileName, offset);
+            const defs: ts.DefinitionInfo[] = configuration.service.getDefinitionAtPosition(fileName, offset);
             const ret = [];
-            if (defs) {
+            if (defs) {                
                 for (let def of defs) {
-                    const sourceFile = service.getProgram().getSourceFile(def.fileName);
+                    const sourceFile = configuration.program.getSourceFile(def.fileName);
                     const start = ts.getLineAndCharacterOfPosition(sourceFile, def.textSpan.start);
                     const end = ts.getLineAndCharacterOfPosition(sourceFile, def.textSpan.start + def.textSpan.length);
                     ret.push(Location.create(util.path2uri(this.root, def.fileName), {
@@ -158,9 +158,9 @@ export default class TypeScriptService {
     getExternalDefinition(uri: string, line: number, column: number) {
         const fileName: string = util.uri2path(uri);
 
-        const service: ts.LanguageService = this.getService(fileName);
+        const configuration = this.projectManager.getConfiguration(fileName);
 
-        const sourceFile = this.getSourceFile(service, fileName);
+        const sourceFile = this.getSourceFile(configuration, fileName);
         if (!sourceFile) {
             return;
         }
@@ -185,27 +185,27 @@ export default class TypeScriptService {
     getHover(uri: string, line: number, column: number): ts.QuickInfo {
         try {
             const fileName: string = util.uri2path(uri);
-            const service: ts.LanguageService = this.getService(fileName);
-            const sourceFile = this.getSourceFile(service, fileName);
+            const configuration = this.projectManager.getConfiguration(fileName);
+            const sourceFile = this.getSourceFile(configuration, fileName);
             if (!sourceFile) {
                 return null;
             }
             const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
-            return service.getQuickInfoAtPosition(fileName, offset);
+            return configuration.service.getQuickInfoAtPosition(fileName, offset);
         } catch (exc) {
             console.error("Exception occurred", exc.stack || exc);
         }
     }
 
     getReferences(uri: string, line: number, column: number): Promise<Location[]> {
-	const self = this;
+        const self = this;
         return new Promise<Location[]>(function (resolve, reject) {
             try {
                 const fileName: string = util.uri2path(uri);
 
-                const service: ts.LanguageService = self.getService(fileName);
+                const configuration = self.projectManager.getConfiguration(fileName);
 
-                const sourceFile = self.getSourceFile(service, fileName);
+                const sourceFile = self.getSourceFile(configuration, fileName);
                 if (!sourceFile) {
                     return resolve([]);
                 }
@@ -217,21 +217,20 @@ export default class TypeScriptService {
                 const prepared = new Date().getTime();
 
                 const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
-                const refs = service.getReferencesAtPosition(fileName, offset);
+                const refs = configuration.service.getReferencesAtPosition(fileName, offset);
 
                 const fetched = new Date().getTime();
                 const ret = [];
                 const tasks = [];
 
-                if (refs) {
-                    const program = service.getProgram();
+                if (refs) {                    
                     for (let ref of refs) {
-                        tasks.push(self.transformReference(self.root, program, ref));
+                        tasks.push(self.transformReference(self.root, configuration.program, ref));
                     }
                 }
                 async.parallel(tasks, function (err: Error, results: Location[]) {
                     const finished = new Date().getTime();
-                    console.error('references', 'transform', (finished - fetched) / 1000.0, 'fetch', (fetched - prepared) / 1000.0, 'prepare', (prepared - started) / 1000.0);                    
+                    console.error('references', 'transform', (finished - fetched) / 1000.0, 'fetch', (fetched - prepared) / 1000.0, 'prepare', (prepared - started) / 1000.0);
                     resolve(results);
                 });
             } catch (exc) {
@@ -242,15 +241,14 @@ export default class TypeScriptService {
     }
 
     getWorkspaceSymbols(query: string, limit?: number): ts.NavigateToItem[] {
-        // TODO: multiple projects?
-        const service: ts.LanguageService = this.projectManager.getAnyService();
-        return service.getNavigateToItems(query, limit);
+        // TODO: multiple projects?        
+        return this.projectManager.getAnyConfiguration().service.getNavigateToItems(query, limit);
     }
 
     getPositionFromOffset(fileName: string, offset: number): Position {
 
-        const service: ts.LanguageService = this.getService(fileName);
-        const sourceFile = this.getSourceFile(service, fileName);
+        const configuration = this.projectManager.getConfiguration(fileName);
+        const sourceFile = this.getSourceFile(configuration, fileName);
         if (!sourceFile) {
             return null;
         }
@@ -258,21 +256,17 @@ export default class TypeScriptService {
         return Position.create(res.line, res.character);
     }
 
-    private getSourceFile(service: ts.LanguageService, fileName: string): ts.SourceFile {
+    private getSourceFile(configuration: pm.ProjectConfiguration, fileName: string): ts.SourceFile {
         if (!this.projectManager.hasFile(fileName)) {
             return null;
         }
-        const sourceFile = service.getProgram().getSourceFile(fileName);
+        const sourceFile = configuration.program.getSourceFile(fileName);
         if (sourceFile) {
             return sourceFile;
         }
         // HACK (alexsaveliev) using custom method to add a file
-        service.getProgram().addFile(fileName);
-        return service.getProgram().getSourceFile(fileName);
-    }
-
-    private getService(fileName: string): ts.LanguageService {
-        return this.projectManager.getService(fileName);
+        configuration.program.addFile(fileName);
+        return configuration.program.getSourceFile(fileName);
     }
 
     private transformReference(root: string, program: ts.Program, ref: ts.ReferenceEntry): AsyncFunction<Location> {
