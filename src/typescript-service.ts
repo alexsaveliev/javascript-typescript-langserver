@@ -198,26 +198,25 @@ export default class TypeScriptService {
     }
 
     getReferences(uri: string, line: number, column: number): Promise<Location[]> {
-
+	const self = this;
         return new Promise<Location[]>(function (resolve, reject) {
             try {
                 const fileName: string = util.uri2path(uri);
 
-                const service: ts.LanguageService = this.getService(fileName);
+                const service: ts.LanguageService = self.getService(fileName);
 
-                const sourceFile = this.getSourceFile(service, fileName);
+                const sourceFile = self.getSourceFile(service, fileName);
                 if (!sourceFile) {
                     return resolve([]);
                 }
 
                 const started = new Date().getTime();
 
-                this.projectManager.prepareService(fileName);
+                self.projectManager.prepareService(fileName);
 
                 const prepared = new Date().getTime();
 
                 const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
-                // const offset: number = this.offset(fileName, line, column);
                 const refs = service.getReferencesAtPosition(fileName, offset);
 
                 const fetched = new Date().getTime();
@@ -225,8 +224,9 @@ export default class TypeScriptService {
                 const tasks = [];
 
                 if (refs) {
+                    const program = service.getProgram();
                     for (let ref of refs) {
-                        tasks.push(this.transformReference(service, ref));
+                        tasks.push(self.transformReference(self.root, program, ref));
                     }
                 }
                 async.parallel(tasks, function (err: Error, results: Location[]) {
@@ -275,12 +275,12 @@ export default class TypeScriptService {
         return this.projectManager.getService(fileName);
     }
 
-    private transformReference(service: ts.LanguageService, ref: ts.ReferenceEntry): AsyncFunction<Location> {
+    private transformReference(root: string, program: ts.Program, ref: ts.ReferenceEntry): AsyncFunction<Location> {
         return function (callback: (err?: Error, result?: Location) => void) {
-            const sourceFile = service.getProgram().getSourceFile(ref.fileName);
+            const sourceFile = program.getSourceFile(ref.fileName);
             let start = ts.getLineAndCharacterOfPosition(sourceFile, ref.textSpan.start);
             let end = ts.getLineAndCharacterOfPosition(sourceFile, ref.textSpan.start + ref.textSpan.length);
-            callback(null, Location.create(util.path2uri(this.root, ref.fileName), {
+            callback(null, Location.create(util.path2uri(root, ref.fileName), {
                 start: start,
                 end: end
             }));
