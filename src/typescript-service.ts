@@ -1,10 +1,13 @@
 /// <reference path="../typings/node/node.d.ts"/>
+/// <reference path="../typings/async/async.d.ts"/>
 ///// <reference path="../typings/typescript/typescript.d.ts"/>
 
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
 import { IConnection, Position, Location } from 'vscode-languageserver';
+
+import * as async from 'async';
 
 import * as util from './util';
 import ProjectManager from './project-manager';
@@ -194,38 +197,48 @@ export default class TypeScriptService {
         }
     }
 
-    getReferences(uri: string, line: number, column: number): Location[] {
-        try {
-            const fileName: string = util.uri2path(uri);
+    getReferences(uri: string, line: number, column: number): Promise<Location[]> {
 
-            const service: ts.LanguageService = this.getService(fileName);
+        return new Promise<Location[]>(function (resolve, reject) {
+            try {
+                const fileName: string = util.uri2path(uri);
 
-            const sourceFile = this.getSourceFile(service, fileName);
-            if (!sourceFile) {
-                return [];
-            }
+                const service: ts.LanguageService = this.getService(fileName);
 
-            this.projectManager.prepareService(fileName);
-
-            const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
-            // const offset: number = this.offset(fileName, line, column);
-            const refs = service.getReferencesAtPosition(fileName, offset);
-            const ret = [];
-            if (refs) {
-                for (let ref of refs) {
-                    const sourceFile = service.getProgram().getSourceFile(ref.fileName);
-                    let start = ts.getLineAndCharacterOfPosition(sourceFile, ref.textSpan.start);
-                    let end = ts.getLineAndCharacterOfPosition(sourceFile, ref.textSpan.start + ref.textSpan.length);
-                    ret.push(Location.create(util.path2uri(this.root, ref.fileName), {
-                        start: start,
-                        end: end
-                    }));
+                const sourceFile = this.getSourceFile(service, fileName);
+                if (!sourceFile) {
+                    return resolve([]);
                 }
+
+                const started = new Date().getTime();
+
+                this.projectManager.prepareService(fileName);
+
+                const prepared = new Date().getTime();
+
+                const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
+                // const offset: number = this.offset(fileName, line, column);
+                const refs = service.getReferencesAtPosition(fileName, offset);
+
+                const fetched = new Date().getTime();
+                const ret = [];
+                const tasks = [];
+
+                if (refs) {
+                    for (let ref of refs) {
+                        tasks.push(this.transformReference(service, ref));
+                    }
+                }
+                async.parallel(tasks, function (err: Error, results: Location[]) {
+                    const finished = new Date().getTime();
+                    console.error('references', 'transform', (finished - fetched) / 1000.0, 'fetch', (fetched - prepared) / 1000.0, 'prepare', (prepared - started) / 1000.0);                    
+                    resolve(results);
+                });
+            } catch (exc) {
+                console.error("Exception occurred", exc.stack || exc);
+                return reject(exc);
             }
-            return ret;
-        } catch (exc) {
-            console.error("Exception occurred", exc.stack || exc);
-        }
+        });
     }
 
     getWorkspaceSymbols(query: string, limit?: number): ts.NavigateToItem[] {
@@ -261,4 +274,17 @@ export default class TypeScriptService {
     private getService(fileName: string): ts.LanguageService {
         return this.projectManager.getService(fileName);
     }
+
+    private transformReference(service: ts.LanguageService, ref: ts.ReferenceEntry): AsyncFunction<Location> {
+        return function (callback: (err?: Error, result?: Location) => void) {
+            const sourceFile = service.getProgram().getSourceFile(ref.fileName);
+            let start = ts.getLineAndCharacterOfPosition(sourceFile, ref.textSpan.start);
+            let end = ts.getLineAndCharacterOfPosition(sourceFile, ref.textSpan.start + ref.textSpan.length);
+            callback(null, Location.create(util.path2uri(this.root, ref.fileName), {
+                start: start,
+                end: end
+            }));
+        }
+    }
+
 }

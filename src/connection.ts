@@ -261,10 +261,13 @@ export default class Connection {
                     const init = new Date().getTime();
                     try {
                         let reluri = util.uri2reluri(params.textDocument.uri, workspaceRoot);
-                        const result: Location[] = service.getReferences(reluri, params.position.line, params.position.character);
-                        const exit = new Date().getTime();
-                        console.error('references', params.textDocument.uri, params.position.line, params.position.character, 'total', (exit - enter) / 1000.0, 'busy', (exit - init) / 1000.0, 'wait', (init - enter) / 1000.0);
-                        return resolve(result);
+                        service.getReferences(reluri, params.position.line, params.position.character).then(
+                            function (result) {
+                                const exit = new Date().getTime();
+                                console.error('references', params.textDocument.uri, params.position.line, params.position.character, 'total', (exit - enter) / 1000.0, 'busy', (exit - init) / 1000.0, 'wait', (init - enter) / 1000.0);
+                                return resolve(result);
+                            }
+                        );
                     } catch (e) {
                         console.error(params, e);
                         return resolve([]);
