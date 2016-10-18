@@ -5,7 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
-import { IConnection, Position, Location } from 'vscode-languageserver';
+import { IConnection, Position, Location, SymbolInformation, Range } from 'vscode-languageserver';
 
 import * as async from 'async';
 
@@ -138,7 +138,7 @@ export default class TypeScriptService {
             const offset: number = ts.getPositionOfLineAndCharacter(sourceFile, line, column);
             const defs: ts.DefinitionInfo[] = configuration.service.getDefinitionAtPosition(fileName, offset);
             const ret = [];
-            if (defs) {                
+            if (defs) {
                 for (let def of defs) {
                     const sourceFile = configuration.program.getSourceFile(def.fileName);
                     const start = ts.getLineAndCharacterOfPosition(sourceFile, def.textSpan.start);
@@ -223,7 +223,7 @@ export default class TypeScriptService {
                 const ret = [];
                 const tasks = [];
 
-                if (refs) {                    
+                if (refs) {
                     for (let ref of refs) {
                         tasks.push(self.transformReference(self.root, configuration.program, ref));
                     }
@@ -240,9 +240,23 @@ export default class TypeScriptService {
         });
     }
 
-    getWorkspaceSymbols(query: string, limit?: number): ts.NavigateToItem[] {
-        // TODO: multiple projects?        
-        return this.projectManager.getAnyConfiguration().service.getNavigateToItems(query, limit);
+    getWorkspaceSymbols(query: string, limit?: number): Promise<SymbolInformation[]> {
+        // TODO: multiple projects?
+        const self = this;
+        return new Promise<SymbolInformation[]>(function (resolve, reject) {
+            const configuration = this.projectManager.getAnyConfiguration();
+            this.projectManager.prepareService();
+            const items = configuration.service.getNavigateToItems(query, limit);
+            const tasks = [];
+            if (items) {
+                items.forEach(function (item) {
+                    tasks.push(self.transformNavItem(self.root, configuration.program, item));
+                });
+            }
+            async.parallel(tasks, function (err: Error, results: SymbolInformation[]) {
+                resolve(results);
+            });
+        });
     }
 
     getPositionFromOffset(fileName: string, offset: number): Position {
@@ -278,6 +292,18 @@ export default class TypeScriptService {
                 start: start,
                 end: end
             }));
+        }
+    }
+
+    private transformNavItem(root: string, program: ts.Program, item: ts.NavigateToItem): AsyncFunction<SymbolInformation> {
+        return function (callback: (err?: Error, result?: SymbolInformation) => void) {
+            const sourceFile = program.getSourceFile(item.fileName);
+            let start = ts.getLineAndCharacterOfPosition(sourceFile, item.textSpan.start);
+            let end = ts.getLineAndCharacterOfPosition(sourceFile, item.textSpan.start + item.textSpan.length);
+            callback(null, SymbolInformation.create(item.name,
+                util.convertStringtoSymbolKind(item.kind),
+                Range.create(start.line, start.character, end.line, end.character),
+                'file:///' + item.fileName, item.containerName));
         }
     }
 

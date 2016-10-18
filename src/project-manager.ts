@@ -83,9 +83,9 @@ export class ProjectManager {
         return this.localFs.fileExists(name);
     }
 
-    prepareService(fileName: string) {
+    prepareService(fileName?: string) {
         const self = this;
-        const config = this.getConfiguration(fileName);
+        const config = fileName ? this.getConfiguration(fileName) : this.getAnyConfiguration();
         if (config.host.complete) {
             return;
         }
