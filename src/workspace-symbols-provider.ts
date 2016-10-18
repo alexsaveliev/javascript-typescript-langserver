@@ -23,7 +23,7 @@ export default class WorkspaceSymbolsProvider {
         let self = this;
         let count = 0;
         // TODO: multiple sub-projects
-        for (const sourceFile of this.service.projectManager.getAnyService().getProgram().getSourceFiles()) {
+        for (const sourceFile of this.service.projectManager.getAnyConfiguration().program.getSourceFiles()) {
             if (!sourceFile.hasNoDefaultLib && sourceFile.fileName.indexOf("node_modules") == -1 && (!limit || count < limit)) {
                 sourceFile.getChildren().forEach(child => {
                     if (!limit || count < limit) {

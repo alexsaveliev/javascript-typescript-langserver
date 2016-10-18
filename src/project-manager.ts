@@ -1,5 +1,5 @@
 /// <reference path="../typings/node/node.d.ts"/>
-///// <reference path="../typings/typescript/typescript.d.ts"/>
+/// <reference path="../typings/typescript/typescript.d.ts"/>
 /// <reference path="../typings/async/async.d.ts"/>
 
 import * as path_ from 'path';
@@ -12,14 +12,13 @@ import * as FileSystem from './fs';
 import * as util from './util';
 import * as match from './match-files';
 
-export default class ProjectsManager {
+export class ProjectManager {
 
     private root: string;
     private strict: boolean;
 
-    private defaultService: ts.LanguageService;
-    private services: Map<string, ts.LanguageService>;
-    private hosts: Map<string, InMemoryLanguageServiceHost>;
+    private defaultConfig: ProjectConfiguration;
+    private configs: Map<string, ProjectConfiguration>;
 
     private remoteFs: FileSystem.FileSystem;
     private localFs: InMemoryFileSystem;
@@ -27,8 +26,7 @@ export default class ProjectsManager {
     constructor(root: string, strict: boolean, connection: IConnection) {
         this.root = util.normalizePath(root);
         this.strict = strict;
-        this.services = new Map<string, ts.LanguageService>();
-        this.hosts = new Map<string, InMemoryLanguageServiceHost>();
+        this.configs = new Map<string, ProjectConfiguration>();
         this.localFs = new InMemoryFileSystem(this.root);
 
         if (strict) {
@@ -36,11 +34,17 @@ export default class ProjectsManager {
         } else {
             this.remoteFs = new FileSystem.LocalFileSystem(root)
         }
-        this.defaultService = ts.createLanguageService(new InMemoryLanguageServiceHost(root, {
+        const defaultHost = new InMemoryLanguageServiceHost(root, {
             module: ts.ModuleKind.CommonJS,
             allowNonTsExtensions: false,
             allowJs: false
-        }, this.localFs, []), ts.createDocumentRegistry());
+        }, this.localFs, []);
+        const defaultService = ts.createLanguageService(defaultHost, ts.createDocumentRegistry());
+        this.defaultConfig = {
+            service: defaultService,
+            program: defaultService.getProgram(),
+            host: defaultHost
+        }
     }
 
     initialize(): Promise<void> {
@@ -79,82 +83,29 @@ export default class ProjectsManager {
         return this.localFs.fileExists(name);
     }
 
-    getService(fileName: string): ts.LanguageService {
-        let dir = path_.posix.dirname(fileName);
-        let service;
-        while (dir && dir != this.root) {
-            service = this.services.get(dir);
-            if (service) {
-                return service;
-            }
-            dir = path_.posix.dirname(dir);
-            if (dir == '.') {
-                dir = '';
-            }
-        }
-        service = this.services.get(dir);
-        return service || this.defaultService;
-    }
-
     prepareService(fileName: string) {
-
         const self = this;
-
-        let dir = path_.posix.dirname(fileName);
-        let host: InMemoryLanguageServiceHost;
-        let service;
-        while (dir && dir != this.root) {
-            host = this.hosts.get(dir);
-            if (host) {
-                service = this.services.get(dir);
-                break;
-            }
-            dir = path_.posix.dirname(dir);
-            if (dir == '.') {
-                dir = '';
-            }
-        }
-        if (!host) {
-            host = this.hosts.get(dir);
-            if (!host) {
-                return;
-            }
-            service = this.services.get(dir);
-        }
-        if (host.complete) {
+        const config = this.getConfiguration(fileName);
+        if (config.host.complete) {
             return;
         }
-        (host.getExpectedFiles() || []).forEach(function (fileName) {
-            const sourceFile = service.getProgram().getSourceFile(fileName);
+        (config.host.getExpectedFiles() || []).forEach(function (fileName) {
+            const sourceFile = config.service.getProgram().getSourceFile(fileName);
             if (!sourceFile) {
-                service.getProgram().addFile(fileName, self.localFs.readFile(fileName));
+                config.program.addFile(fileName);
             }
         });
-        host.complete = true;
+        config.host.complete = true;
     }
 
-    getAnyService(): ts.LanguageService {
-        let service = null;
-        this.services.forEach(function (v) {
-            if (!service) {
-                service = v;
+    getAnyConfiguration(): ProjectConfiguration {
+        let config = null;
+        this.configs.forEach(function (v) {
+            if (!config) {
+                config = v;
             }
         });
-        return service || this.defaultService;
-    }
-
-    private fetchDir(path: string): AsyncFunction<FileSystem.FileInfo[]> {
-        let self = this;
-        return function (callback: (err?: Error, result?: FileSystem.FileInfo[]) => void) {
-            self.remoteFs.readDir(path, (err?: Error, result?: FileSystem.FileInfo[]) => {
-                if (result) {
-                    result.forEach(function (fi) {
-                        fi.Name_ = path_.posix.join(path, fi.Name_)
-                    })
-                }
-                return callback(err, result)
-            });
-        }
+        return config || this.defaultConfig;
     }
 
     getFiles(path: string, callback: (err: Error, result?: string[]) => void) {
@@ -199,6 +150,37 @@ export default class ProjectsManager {
             })
         };
         this.fetchDir(path)(cb)
+    }
+
+    getConfiguration(fileName: string): ProjectConfiguration {
+        let dir = path_.posix.dirname(fileName);
+        let config;
+        while (dir && dir != this.root) {
+            config = this.configs.get(dir);
+            if (config) {
+                return config;
+            }
+            dir = path_.posix.dirname(dir);
+            if (dir == '.') {
+                dir = '';
+            }
+        }
+        config = this.configs.get(dir);
+        return config || this.defaultConfig;
+    }    
+
+    private fetchDir(path: string): AsyncFunction<FileSystem.FileInfo[]> {
+        let self = this;
+        return function (callback: (err?: Error, result?: FileSystem.FileInfo[]) => void) {
+            self.remoteFs.readDir(path, (err?: Error, result?: FileSystem.FileInfo[]) => {
+                if (result) {
+                    result.forEach(function (fi) {
+                        fi.Name_ = path_.posix.join(path, fi.Name_)
+                    })
+                }
+                return callback(err, result)
+            });
+        }
     }
 
     private fetchContent(files: string[], callback: (err?: Error) => void) {
@@ -262,8 +244,9 @@ export default class ProjectsManager {
                 configParseResult.options,
                 self.localFs,
                 configParseResult.fileNames);
-            self.hosts.set(dir, host);
-            self.services.set(dir, ts.createLanguageService(host, ts.createDocumentRegistry()));
+            const service = ts.createLanguageService(host, ts.createDocumentRegistry());
+            const program = service.getProgram();
+            self.configs.set(dir, { service: service, host: host, program: program });
             callback();
         }
     }
@@ -373,13 +356,13 @@ class InMemoryFileSystem implements ts.ParseConfigHost {
             });
     }
 
-    getFileSystemEntries(path: string): match.FileSystemEntries {        
-        path = path_.posix.relative(this.path, path);        
+    getFileSystemEntries(path: string): match.FileSystemEntries {
+        path = path_.posix.relative(this.path, path);
         const ret = { files: [], directories: [] };
         let node = this.rootNode;
         const components = path.split('/');
         if (components.length != 1 || components[0]) {
-            components.forEach(function (component) {                
+            components.forEach(function (component) {
                 const n = node[component];
                 if (!n) {
                     return ret;
@@ -393,7 +376,13 @@ class InMemoryFileSystem implements ts.ParseConfigHost {
             } else {
                 ret.directories.push(name);
             }
-        });        
+        });
         return ret;
     }
+}
+
+export class ProjectConfiguration {
+    service: ts.LanguageService;
+    program: ts.Program;
+    host: InMemoryLanguageServiceHost;
 }
