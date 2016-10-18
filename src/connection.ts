@@ -146,8 +146,6 @@ export default class Connection {
             return new Promise<SymbolInformation[]>(function (resolve, reject) {
                 initialize().then(function () {
                     let result = [];
-                    // TODO: restore
-                    /*
                     const init = new Date().getTime();
                     try {
                         if (params.query == "exported") {
@@ -165,32 +163,19 @@ export default class Connection {
                                     return SymbolInformation.create(external.name, util.formEmptyKind(), util.formEmptyRange(), util.formExternalUri(external));
                                 });
                             }
-                        } else if (params.query == '') {
-                            const topDecls = service.getTopLevelDeclarations(params.limit);
-                            if (topDecls) {
-                                result = topDecls.map(decl => {
-                                    return SymbolInformation.create(decl.name, decl.kind, decl.location.range,
-                                        'file:///' + decl.location.file, util.formExternalUri(decl));
-                                });
-                            }
                         } else {
-                            const navigateToItems = service.getWorkspaceSymbols(params.query, params.limit);
-                            if (navigateToItems) {
-                                result = navigateToItems.map(item => {
-                                    let start = ts.getLineAndCharacterOfPosition(service.services.getProgram().getSourceFile(item.fileName), item.textSpan.start);
-                                    let end = ts.getLineAndCharacterOfPosition(service.services.getProgram().getSourceFile(item.fileName), item.textSpan.start + item.textSpan.length);
-                                    return SymbolInformation.create(item.name, util.convertStringtoSymbolKind(item.kind), Range.create(start.line, start.character, end.line, end.character), 'file:///' + item.fileName, item.containerName);
+                            return service.getWorkspaceSymbols(params.query, params.limit).then((result) => {
+                                    const exit = new Date().getTime();
+                                    console.error('symbol', params.query, 'total', (exit - enter) / 1000.0, 'busy', (exit - init) / 1000.0, 'wait', (init - enter) / 1000.0);
+                                    return resolve(result);
                                 });
-                            }
                         }
                         const exit = new Date().getTime();
                         console.error('symbol', params.query, 'total', (exit - enter) / 1000.0, 'busy', (exit - init) / 1000.0, 'wait', (init - enter) / 1000.0);
-                        return resolve(result);
                     } catch (e) {
                         console.error(params, e);
                         return resolve([]);
                     }
-                    */
                     return resolve(result);
                 }, function (err) {
                     initialized = null;
