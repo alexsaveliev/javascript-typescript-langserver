@@ -164,8 +164,7 @@ export default class Connection {
                                 });
                             }
                         } else {
-                            return service.
-                                getWorkspaceSymbols(params.query, params.limit).then((result) => {
+                            return service.getWorkspaceSymbols(params.query, params.limit).then((result) => {
                                     const exit = new Date().getTime();
                                     console.error('symbol', params.query, 'total', (exit - enter) / 1000.0, 'busy', (exit - init) / 1000.0, 'wait', (init - enter) / 1000.0);
                                     return resolve(result);

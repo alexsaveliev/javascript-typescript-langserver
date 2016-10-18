@@ -245,7 +245,7 @@ export default class TypeScriptService {
         const self = this;
         return new Promise<SymbolInformation[]>(function (resolve, reject) {
             const configuration = this.projectManager.getAnyConfiguration();
-            this.projectManager.prepareService();
+            self.projectManager.prepareService();
             const items = configuration.service.getNavigateToItems(query, limit);
             const tasks = [];
             if (items) {
