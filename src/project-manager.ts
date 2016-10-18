@@ -90,9 +90,11 @@ export class ProjectManager {
             return;
         }
         (config.host.getExpectedFiles() || []).forEach(function (fileName) {
-            const sourceFile = config.service.getProgram().getSourceFile(fileName);
+            const sourceFile = config.program.getSourceFile(fileName);
             if (!sourceFile) {
                 config.program.addFile(fileName);
+                // requery
+                config.program = config.service.getProgram();
             }
         });
         config.host.complete = true;
