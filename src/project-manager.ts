@@ -37,7 +37,7 @@ export class ProjectManager {
         const defaultHost = new InMemoryLanguageServiceHost(root, {
             module: ts.ModuleKind.CommonJS,
             allowNonTsExtensions: false,
-            allowJs: false
+            allowJs: true
         }, this.localFs, []);
         const defaultService = ts.createLanguageService(defaultHost, ts.createDocumentRegistry());
         this.defaultConfig = {
@@ -263,7 +263,7 @@ export class ProjectManager {
         let tasks = [];
         const self = this;
         Object.keys(this.localFs.entries).forEach(function (k) {
-            if (!/(^|\/)tsconfig\.json$/.test(k)) {
+            if (!/(^|\/)[tj]sconfig\.json$/.test(k)) {
                 return;
             }
             if (/(^|\/)node_modules\//.test(k)) {
@@ -292,9 +292,13 @@ export class ProjectManager {
             }
             const base = dir || self.root;
             const configParseResult = ts.parseJsonConfigFileContent(configObject, self.localFs, base);
-            console.error('Added project', tsConfigPath, dir);
+            console.error('Added project', tsConfigPath);
+            const options = configParseResult.options;
+            if (/(^|\/)jsconfig\.json$/.test(tsConfigPath)) {
+                options.allowJs = true;
+            }
             const host = new InMemoryLanguageServiceHost(self.root,
-                configParseResult.options,
+                options,
                 self.localFs,
                 configParseResult.fileNames);
             const service = ts.createLanguageService(host, ts.createDocumentRegistry());
