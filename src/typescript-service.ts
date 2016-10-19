@@ -244,7 +244,7 @@ export default class TypeScriptService {
         // TODO: multiple projects?
         const self = this;
         return new Promise<SymbolInformation[]>(function (resolve, reject) {
-            const configuration = this.projectManager.getAnyConfiguration();
+            const configuration = self.projectManager.getAnyConfiguration();
             self.projectManager.prepareService();
             const items = configuration.service.getNavigateToItems(query, limit);
             const tasks = [];
