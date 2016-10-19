@@ -47,6 +47,9 @@ export class ProjectManager {
         }
     }
 
+    /**
+     * Fetches directory tree and files from VFS, identifies and initializes sub-projects
+     */
     initialize(): Promise<void> {
 
         let self = this;
@@ -54,6 +57,7 @@ export class ProjectManager {
         let done = false;
 
         return new Promise<void>(function (resolve, reject) {
+            // fetch directory tree from VFS
             self.getFiles(self.root, function (err, files) {
                 // HACK (callback is called twice) 
                 if (done) {
@@ -64,12 +68,14 @@ export class ProjectManager {
                     console.error('An error occurred while collecting files', err);
                     return reject(err);
                 }
+                // fetch files from VFS
                 self.fetchContent(files, function (err) {
                     if (err) {
                         console.error('An error occurred while fetching files content', err);
                         return reject(err);
                     }
 
+                    // Determine and initialize sub-projects
                     self.processProjects(function () {
                         return resolve();
                     });
@@ -79,13 +85,25 @@ export class ProjectManager {
         });
     }
 
-    hasFile(name) {
+    /**
+     * @return true if there is a file with a given name
+     */
+    hasFile(name: string) {
         return this.localFs.fileExists(name);
     }
 
-    prepareService(fileName?: string) {
-        const self = this;
-        const config = fileName ? this.getConfiguration(fileName) : this.getAnyConfiguration();
+    /**
+     * Ensures that all files are added (and parsed) to the project to which fileName belongs. 
+     */
+    syncConfigurationFor(fileName: string) {
+        return this.syncConfiguration(this.getConfiguration(fileName));
+    }
+
+    /**
+     * Ensures that all files are added (and parsed) for the given project.
+     * Uses tsconfig.json settings to identify what files make a project (root files)
+     */
+    syncConfiguration(config: ProjectConfiguration) {
         if (config.host.complete) {
             return;
         }
@@ -93,13 +111,26 @@ export class ProjectManager {
             const sourceFile = config.program.getSourceFile(fileName);
             if (!sourceFile) {
                 config.program.addFile(fileName);
-                // requery
+                // requery program object to synchonize LanguageService's data   
                 config.program = config.service.getProgram();
             }
         });
         config.host.complete = true;
     }
 
+    /**
+     * @return all projects
+     */
+    getConfigurations(): ProjectConfiguration[] {
+        const ret = [];
+        this.configs.forEach(function(v, k) {
+            ret.push(v);
+        });
+        return ret;
+    }
+
+    // TODO: eliminate this method
+    // we should process all subprojects instead
     getAnyConfiguration(): ProjectConfiguration {
         let config = null;
         this.configs.forEach(function (v) {
@@ -110,6 +141,9 @@ export class ProjectManager {
         return config || this.defaultConfig;
     }
 
+    /**
+     * Collects all files in the given path
+     */
     getFiles(path: string, callback: (err: Error, result?: string[]) => void) {
 
         const start = new Date().getTime();
@@ -153,7 +187,10 @@ export class ProjectManager {
         };
         this.fetchDir(path)(cb)
     }
-
+    
+    /**
+     * @return project configuration for a given source file. Climbs directory tree up to workspace root if needed 
+     */
     getConfiguration(fileName: string): ProjectConfiguration {
         let dir = path_.posix.dirname(fileName);
         let config;
@@ -169,8 +206,11 @@ export class ProjectManager {
         }
         config = this.configs.get(dir);
         return config || this.defaultConfig;
-    }    
+    }
 
+    /**
+     * @return asynchronous function that fetches directory content from VFS
+     */
     private fetchDir(path: string): AsyncFunction<FileSystem.FileInfo[]> {
         let self = this;
         return function (callback: (err?: Error, result?: FileSystem.FileInfo[]) => void) {
@@ -185,6 +225,9 @@ export class ProjectManager {
         }
     }
 
+    /**
+     * Fetches content of the specified files
+     */
     private fetchContent(files: string[], callback: (err?: Error) => void) {
         let tasks = [];
         const self = this;
@@ -205,12 +248,17 @@ export class ProjectManager {
             tasks.push(fetch(path))
         });
         const start = new Date().getTime();
+        // Why parallelLimit: There may be too many open files when working with local FS and trying
+        // to open them in parallel
         async.parallelLimit(tasks, 100, function (err) {
             console.error('files fetched in', (new Date().getTime() - start) / 1000.0);
             return callback(err);
         });
     }
 
+    /**
+     * Detects projects denoted by tsconfig.json
+     */
     private processProjects(callback: (err?: Error) => void) {
         let tasks = [];
         const self = this;
@@ -226,6 +274,9 @@ export class ProjectManager {
         async.parallel(tasks, callback);
     }
 
+    /**
+     * @return asynchronous function that processes TypeScript project
+     */
     private processProject(tsConfigPath: string, tsConfigContent: string): AsyncFunction<void> {
         const self = this;
         return function (callback: (err?: Error) => void) {
@@ -254,6 +305,9 @@ export class ProjectManager {
     }
 }
 
+/**
+ * Implementaton of LanguageServiceHost that works with in-memory file system
+ */
 class InMemoryLanguageServiceHost implements ts.LanguageServiceHost {
 
     complete: boolean;
@@ -308,6 +362,9 @@ class InMemoryLanguageServiceHost implements ts.LanguageServiceHost {
     }
 }
 
+/**
+ * In-memory file system, can be served as a ParseConfigHost (thus allowing listing files that belong to project based on tsconfig.json options)
+ */
 class InMemoryFileSystem implements ts.ParseConfigHost {
 
     entries: any;
@@ -383,6 +440,9 @@ class InMemoryFileSystem implements ts.ParseConfigHost {
     }
 }
 
+/**
+ * Project configuration holder
+ */
 export class ProjectConfiguration {
     service: ts.LanguageService;
     program: ts.Program;

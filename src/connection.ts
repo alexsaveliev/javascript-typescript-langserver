@@ -126,7 +126,8 @@ export default class Connection {
                             textDocumentSync: documents.syncKind,
                             hoverProvider: true,
                             definitionProvider: true,
-                            referencesProvider: true
+                            referencesProvider: true,
+                            workspaceSymbolProvider: true
                         }
                     })
                 }

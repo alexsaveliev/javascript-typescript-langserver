@@ -24,13 +24,13 @@ export default class TypeScriptService {
     root: string;
 
     private externalRefs = null;
-    private exportedEnts = null;    
+    private exportedEnts = null;
     private exportedSymbolProvider: ExportedSymbolsProvider;
-    private externalRefsProvider: ExternalRefsProvider;    
+    private externalRefsProvider: ExternalRefsProvider;
 
     private envDefs = [];
 
-    private workspaceSymbols: SymbolInformation[]; 
+    private workspaceSymbols: SymbolInformation[];
 
     constructor(root: string, strict: boolean, connection: IConnection) {
         this.root = root;
@@ -201,7 +201,7 @@ export default class TypeScriptService {
 
                 const started = new Date().getTime();
 
-                self.projectManager.prepareService(fileName);
+                self.projectManager.syncConfigurationFor(fileName);
 
                 const prepared = new Date().getTime();
 
@@ -230,27 +230,20 @@ export default class TypeScriptService {
     }
 
     getWorkspaceSymbols(query: string, limit?: number): Promise<SymbolInformation[]> {
-        // TODO: multiple projects?
         const self = this;
         return new Promise<SymbolInformation[]>(function (resolve, reject) {
             // TODO: cache all symbols or slice of them?
             if (!query && self.workspaceSymbols) {
                 return resolve(self.workspaceSymbols);
             }
-            const configuration = self.projectManager.getAnyConfiguration();
-            self.projectManager.prepareService();
-            const items = configuration.service.getNavigateToItems(query, limit);
-            const tasks = [];
-            if (items) {
-                items.forEach(function (item) {
-                    tasks.push(self.transformNavItem(self.root, configuration.program, item));
-                });
-            }
-            async.parallel(tasks, function (err: Error, results: SymbolInformation[]) {
+            const configurations = self.projectManager.getConfigurations();
+            const index = 0;
+            const items = [];
+            self.collectWorkspaceSymbols(query, limit, configurations, index, items, function () {
                 if (!query) {
-                    self.workspaceSymbols = results;
+                    self.workspaceSymbols = items;
                 }
-                resolve(results);
+                resolve(items);
             });
         });
     }
@@ -266,6 +259,11 @@ export default class TypeScriptService {
         return Position.create(res.line, res.character);
     }
 
+    /**
+     * Fetches (or creates if needed) source file object for a given file name
+     * @param configuration project configuration
+     * @param fileName file name to fetch source file for or create it
+     */
     private getSourceFile(configuration: pm.ProjectConfiguration, fileName: string): ts.SourceFile {
         if (!this.projectManager.hasFile(fileName)) {
             return null;
@@ -274,11 +272,14 @@ export default class TypeScriptService {
         if (sourceFile) {
             return sourceFile;
         }
-        // HACK (alexsaveliev) using custom method to add a file
+        // HACK (alexsaveliev) using custom method to add a file        
         configuration.program.addFile(fileName);
         return configuration.program.getSourceFile(fileName);
     }
 
+    /**
+     * Produces async function that converts ReferenceEntry object to Location
+     */
     private transformReference(root: string, program: ts.Program, ref: ts.ReferenceEntry): AsyncFunction<Location> {
         return function (callback: (err?: Error, result?: Location) => void) {
             const sourceFile = program.getSourceFile(ref.fileName);
@@ -291,6 +292,9 @@ export default class TypeScriptService {
         }
     }
 
+    /**
+     * Produces async function that converts NavigateToItem object to SymbolInformation
+     */
     private transformNavItem(root: string, program: ts.Program, item: ts.NavigateToItem): AsyncFunction<SymbolInformation> {
         return function (callback: (err?: Error, result?: SymbolInformation) => void) {
             const sourceFile = program.getSourceFile(item.fileName);
@@ -301,6 +305,43 @@ export default class TypeScriptService {
                 Range.create(start.line, start.character, end.line, end.character),
                 'file:///' + item.fileName, item.containerName));
         }
+    }
+
+    /**
+     * Collects workspace symbols from all sub-projects until there are no more sub-projects left or we found enough items
+     * @param query search query
+     * @param limit max number of items to fetch (if greather than zero)
+     * @param configurations array of project configurations
+     * @param index configuration's index to process. Execution stops if there are no more configs to process or we collected enough items
+     * @param items array to fill with the items found
+     * @param callback callback to call when done
+     */
+    private collectWorkspaceSymbols(query: string,
+        limit: number,
+        configurations: pm.ProjectConfiguration[],
+        index: number,
+        items: SymbolInformation[],
+        callback: () => void) {
+        if (index >= configurations.length) {
+            // safety first
+            return callback();
+        }
+        const configuration = configurations[index];
+        this.projectManager.syncConfiguration(configuration);
+        const chunkSize = limit ? Math.min(limit, limit - items.length) : undefined;
+        const chunk = configuration.service.getNavigateToItems(query, chunkSize);
+        const tasks = [];
+        const self = this;
+        chunk.forEach(function (item) {
+            tasks.push(self.transformNavItem(self.root, configuration.program, item));
+        });
+        async.parallel(tasks, function (err: Error, results: SymbolInformation[]) {
+            Array.prototype.push.apply(items, results);
+            if (limit && items.length >= limit || index == configurations.length - 1) {
+                return callback();
+            }
+            self.collectWorkspaceSymbols(query, limit, configurations, index + 1, items, callback);
+        });
     }
 
 }
