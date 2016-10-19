@@ -14,7 +14,6 @@ import * as pm from './project-manager';
 
 import ExportedSymbolsProvider from './exported-symbols-provider'
 import ExternalRefsProvider from './external-refs-provider';
-import WorkspaceSymbolsProvider from './workspace-symbols-provider';
 
 var sanitizeHtml = require('sanitize-html');
 var JSONPath = require('jsonpath-plus');
@@ -25,13 +24,13 @@ export default class TypeScriptService {
     root: string;
 
     private externalRefs = null;
-    private exportedEnts = null;
-    private topLevelDecls = null;
+    private exportedEnts = null;    
     private exportedSymbolProvider: ExportedSymbolsProvider;
-    private externalRefsProvider: ExternalRefsProvider;
-    private workspaceSymbolProvider: WorkspaceSymbolsProvider;
+    private externalRefsProvider: ExternalRefsProvider;    
 
     private envDefs = [];
+
+    private workspaceSymbols: SymbolInformation[]; 
 
     constructor(root: string, strict: boolean, connection: IConnection) {
         this.root = root;
@@ -42,7 +41,6 @@ export default class TypeScriptService {
         //initialize providers 
         this.exportedSymbolProvider = new ExportedSymbolsProvider(this);
         this.externalRefsProvider = new ExternalRefsProvider(this);
-        this.workspaceSymbolProvider = new WorkspaceSymbolsProvider(this);
     }
 
     initEnvDefFiles() {
@@ -173,15 +171,6 @@ export default class TypeScriptService {
         });
     }
 
-    getTopLevelDeclarations(limit?: number) {
-        if (this.topLevelDecls === null || (limit && this.topLevelDecls.length < limit)) {
-            this.topLevelDecls = this.workspaceSymbolProvider.collectTopLevelInterface(limit);
-        }
-
-        return limit ? this.topLevelDecls.slice(0, limit) : this.topLevelDecls;
-    }
-
-
     getHover(uri: string, line: number, column: number): ts.QuickInfo {
         try {
             const fileName: string = util.uri2path(uri);
@@ -244,6 +233,10 @@ export default class TypeScriptService {
         // TODO: multiple projects?
         const self = this;
         return new Promise<SymbolInformation[]>(function (resolve, reject) {
+            // TODO: cache all symbols or slice of them?
+            if (!query && self.workspaceSymbols) {
+                return resolve(self.workspaceSymbols);
+            }
             const configuration = self.projectManager.getAnyConfiguration();
             self.projectManager.prepareService();
             const items = configuration.service.getNavigateToItems(query, limit);
@@ -254,6 +247,9 @@ export default class TypeScriptService {
                 });
             }
             async.parallel(tasks, function (err: Error, results: SymbolInformation[]) {
+                if (!query) {
+                    self.workspaceSymbols = results;
+                }
                 resolve(results);
             });
         });
