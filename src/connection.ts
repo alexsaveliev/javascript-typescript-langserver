@@ -224,7 +224,7 @@ export default class Connection {
                                 });
                                 let documentation = ts.displayPartsToString(quickInfo.documentation);
                                 if (documentation) {
-                                    contents.push({ language: 'text/html', value: documentation });
+                                    contents.push(documentation);
                                 }
                             }
                             const exit = new Date().getTime();

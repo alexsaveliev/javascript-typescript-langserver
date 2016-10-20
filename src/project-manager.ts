@@ -268,9 +268,9 @@ export class ProjectManager {
             self.configs.set(dir, new ProjectConfiguration(self.localFs, k));
         });
         // collecting all the files in workspace by making fake configuration object         
-        if (!self.configs.size || !self.configs.get('')) {
+        if (!self.configs.get('')) {
             self.configs.set('', new ProjectConfiguration(self.localFs, '', {
-                options: {
+                compilerOptions: {
                     module: ts.ModuleKind.CommonJS,
                     allowNonTsExtensions: false,
                     allowJs: true
