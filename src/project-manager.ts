@@ -83,7 +83,9 @@ export class ProjectManager {
                     }
 
                     // Determine and initialize sub-projects
+                    const start = new Date().getTime();
                     self.processProjects(function () {
+                        console.error(self.configs.size + ' projects found in', (new Date().getTime() - start) / 1000.0);
                         return resolve();
                     });
 
@@ -307,7 +309,6 @@ export class ProjectManager {
             }
             const base = dir || self.root;
             const configParseResult = ts.parseJsonConfigFileContent(configObject, self.localFs, base);
-            console.error('Added project', tsConfigPath);
             const options = configParseResult.options;
             if (/(^|\/)jsconfig\.json$/.test(tsConfigPath)) {
                 options.allowJs = true;
