@@ -341,25 +341,31 @@ export default class TypeScriptService {
             // safety first
             return callback();
         }
-        const configuration = configurations[index];
         const self = this;
-        configuration.get().then(function () {
-            self.projectManager.syncConfiguration(configuration);
-            const chunkSize = limit ? Math.min(limit, limit - items.length) : undefined;
-            const chunk = configuration.service.getNavigateToItems(query, chunkSize);
-            const tasks = [];
-            chunk.forEach(function (item) {
-                tasks.push(self.transformNavItem(self.root, configuration.program, item));
+        setImmediate(function () {
+            const configuration = configurations[index];
+            configuration.get().then(function () {
+                setImmediate(function () {
+                    self.projectManager.syncConfiguration(configuration);
+                    const chunkSize = limit ? Math.min(limit, limit - items.length) : undefined;
+                    setImmediate(function () {
+                        const chunk = configuration.service.getNavigateToItems(query, chunkSize);
+                        const tasks = [];
+                        chunk.forEach(function (item) {
+                            tasks.push(self.transformNavItem(self.root, configuration.program, item));
+                        });
+                        async.parallel(tasks, function (err: Error, results: SymbolInformation[]) {
+                            Array.prototype.push.apply(items, results);
+                            if (limit && items.length >= limit || index == configurations.length - 1) {
+                                return callback();
+                            }
+                            self.collectWorkspaceSymbols(query, limit, configurations, index + 1, items, callback);
+                        });
+                    });
+                });
+            }, function () {
+                return callback();
             });
-            async.parallel(tasks, function (err: Error, results: SymbolInformation[]) {
-                Array.prototype.push.apply(items, results);
-                if (limit && items.length >= limit || index == configurations.length - 1) {
-                    return callback();
-                }
-                self.collectWorkspaceSymbols(query, limit, configurations, index + 1, items, callback);
-            });
-        }, function () {
-            return callback();
         });
     }
 
