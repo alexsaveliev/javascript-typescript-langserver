@@ -105,12 +105,11 @@ export class ProjectManager {
         (config.host.expectedFiles || []).forEach(function (fileName) {
             const sourceFile = config.program.getSourceFile(fileName);
             if (!sourceFile) {
-                config.program.addFile(fileName);
+                config.host.addFile(fileName);
                 changed = true;
             }
         });
         if (changed) {
-            config.host.incProjectVersion();
             // requery program object to synchonize LanguageService's data
             config.program = config.service.getProgram();
         }
@@ -297,6 +296,8 @@ class InMemoryLanguageServiceHost implements ts.LanguageServiceHost {
     private fs: InMemoryFileSystem;
     expectedFiles: string[];
 
+    private files: string[];
+
     private projectVersion: number;
 
     constructor(root: string, options: ts.CompilerOptions, fs: InMemoryFileSystem, expectedFiles: string[]) {
@@ -305,6 +306,7 @@ class InMemoryLanguageServiceHost implements ts.LanguageServiceHost {
         this.fs = fs;
         this.expectedFiles = expectedFiles;
         this.projectVersion = 1;
+        this.files = [];
     }
 
     /**
@@ -315,20 +317,21 @@ class InMemoryLanguageServiceHost implements ts.LanguageServiceHost {
         return '' + this.projectVersion;
     }
 
-    /**
-     * Increments project version, used in conjunction with getProjectVersion()
-     * which may be called by TypeScript to check if internal data is up to date
-     */
-    incProjectVersion() {
-        this.projectVersion++;
-    }
-
     getCompilationSettings(): ts.CompilerOptions {
         return this.options;
     }
 
     getScriptFileNames(): string[] {
-        return [];
+        return this.files;
+    }
+
+    /**
+     * Adds a file and increments project version, used in conjunction with getProjectVersion()
+     * which may be called by TypeScript to check if internal data is up to date
+     */
+    addFile(fileName: string) {
+        this.files.push(fileName);
+        this.projectVersion++;
     }
 
     getScriptVersion(fileName: string): string {

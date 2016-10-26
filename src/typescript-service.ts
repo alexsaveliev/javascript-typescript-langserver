@@ -284,9 +284,7 @@ export default class TypeScriptService {
         if (sourceFile) {
             return sourceFile;
         }
-        // HACK (alexsaveliev) using custom method to add a file
-        configuration.host.incProjectVersion();
-        configuration.program.addFile(fileName);
+        configuration.host.addFile(fileName);
         // requery program object to synchonize LanguageService's data
         configuration.program = configuration.service.getProgram();
         return configuration.program.getSourceFile(fileName);
