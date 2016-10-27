@@ -145,7 +145,62 @@ describe('LSP', function () {
             utils.symbols({
                 query: '',
                 limit: 3
-            }, [], done);
+            }, [
+                    {
+                        "kind": 5,
+                        "location": {
+                            "range": {
+                                "end": {
+                                    "character": 33,
+                                    "line": 0
+                                },
+                                "start": {
+                                    "character": 0,
+                                    "line": 0
+                                }
+                            },
+                            "uri": "file:////a.ts"
+                        },
+                        "name": "a"
+                    },
+                    {
+                        "containerName": "a",
+                        "kind": 6,
+                        "location": {
+                            "range": {
+                                "end": {
+                                    "character": 31,
+                                    "line": 0
+                                },
+                                "start": {
+                                    "character": 10,
+                                    "line": 0
+                                }
+                            },
+                            "uri": "file:////a.ts"
+                        },
+                        "name": "foo"
+                    },
+                    {
+                        "containerName": "foo",
+                        "kind": 15,
+                        "location": {
+                            "range": {
+                                "end": {
+                                    "character": 29,
+                                    "line": 0
+                                },
+                                "start": {
+                                    "character": 24,
+                                    "line": 0
+                                }
+                            },
+                            "uri": "file:////a.ts"
+                        },
+                        "name": "i"
+                    }
+                ]
+                , done);
         });
         it('workspace symbols with not-empty query', function (done: (err?: Error) => void) {
             utils.symbols({
