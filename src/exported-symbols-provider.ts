@@ -151,7 +151,7 @@ export default class ExportedSymbolsProvider {
                 });
             }
             if (node.kind == ts.SyntaxKind.FunctionDeclaration) {
-                if ((node.flags & ts.ModifierFlags.Export) != 0) {
+                if ((node.flags & ts.NodeFlags.Export) != 0) {
                     let decl = <ts.FunctionDeclaration>node;
                     let text = decl.name.text;
                     let path = parentPath ? `${parentPath}.${text}` : `${pkgInfo.name}.${text}`;
@@ -168,7 +168,7 @@ export default class ExportedSymbolsProvider {
                     });
                 }
             } else if (node.kind == ts.SyntaxKind.ClassDeclaration) {
-                if (parentPath || (node.flags & ts.ModifierFlags.Export) != 0) {
+                if (parentPath || (node.flags & ts.NodeFlags.Export) != 0) {
                     let decl = <ts.ClassDeclaration>node;
                     if (!decl.name) {
                         // TODO: add support of "export class {}"
@@ -211,7 +211,7 @@ export default class ExportedSymbolsProvider {
                     }
                 }
             } else if (node.kind == ts.SyntaxKind.VariableDeclaration) {
-                if (parentPath || (node.flags & ts.ModifierFlags.Export) != 0) {
+                if (parentPath || (node.flags & ts.NodeFlags.Export) != 0) {
                     let decl = <ts.VariableDeclaration>node;
                     if (decl.name.kind == ts.SyntaxKind.Identifier) {
                         let name = <ts.Identifier>decl.name;
