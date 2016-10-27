@@ -322,7 +322,7 @@ export default class TypeScriptService {
                             maybeEnough();
                         });
                     } else {
-                        const chunk = this.getNavBarItems(configuration, chunkSize);
+                        const chunk = this.getNavigationTreeItems(configuration, chunkSize);
                         Array.prototype.push.apply(items, chunk);
                         maybeEnough();
                     }
@@ -331,11 +331,14 @@ export default class TypeScriptService {
         }, callback);
     }
 
-    private getNavBarItems(configuration: pm.ProjectConfiguration, limit?: number): SymbolInformation[] {
+    /**
+     * Fetches up to limit navigation bar items from given project, flattennes them  
+     */
+    private getNavigationTreeItems(configuration: pm.ProjectConfiguration, limit?: number): SymbolInformation[] {
         const result = [];
         for (const sourceFile of configuration.program.getSourceFiles()) {
             const tree = configuration.service.getNavigationTree(sourceFile.fileName);
-            this.flattenNavBarItem(tree, null, sourceFile, result, limit);
+            this.flattenNavigationTreeItem(tree, null, sourceFile, result, limit);
             if (limit && result.length >= limit) {
                 break;
             }
@@ -343,23 +346,30 @@ export default class TypeScriptService {
         return result;
     }
 
-    private flattenNavBarItem(item: ts.NavigationTree, parent: ts.NavigationTree, sourceFile: ts.SourceFile, result: SymbolInformation[], limit?: number) {
+    /**
+     * Flattens navigation tree by transforming it to one-dimensional array.
+     * Some items (source files, modules) may be excluded 
+     */
+    private flattenNavigationTreeItem(item: ts.NavigationTree, parent: ts.NavigationTree, sourceFile: ts.SourceFile, result: SymbolInformation[], limit?: number) {
         if (!limit || result.length < limit) {
-            const isModule = item.kind == ts.ScriptElementKind.moduleElement; 
-            if (!isModule) {
-                result.push(this.transformNavBarItem(item, parent, sourceFile));
+            const acceptable = TypeScriptService.isAcceptableNavigationTreeItem(item);
+            if (acceptable) {
+                result.push(this.transformNavigationTreeItem(item, parent, sourceFile));
             }
             if (item.childItems) {
                 let i = 0;
                 while (i < item.childItems.length && (!limit || result.length < limit)) {
-                    this.flattenNavBarItem(item.childItems[i], isModule ? null : item, sourceFile, result, limit);
+                    this.flattenNavigationTreeItem(item.childItems[i], acceptable ? item : null, sourceFile, result, limit);
                     i++;
                 }
             }
         }
     }
 
-    private transformNavBarItem(item: ts.NavigationTree, parent: ts.NavigationTree, sourceFile: ts.SourceFile): SymbolInformation {
+    /**
+     * Transforms NavigationTree to SymbolInformation
+     */
+    private transformNavigationTreeItem(item: ts.NavigationTree, parent: ts.NavigationTree, sourceFile: ts.SourceFile): SymbolInformation {
         const span = item.spans[0];
         let start = ts.getLineAndCharacterOfPosition(sourceFile, span.start);
         let end = ts.getLineAndCharacterOfPosition(sourceFile, span.start + span.length);
@@ -367,6 +377,25 @@ export default class TypeScriptService {
             util.convertStringtoSymbolKind(item.kind),
             Range.create(start.line, start.character, end.line, end.character),
             'file:///' + sourceFile.fileName, parent ? parent.text : '');
+    }
+
+    /**
+     * @return true if navigation tree item is acceptable for inclusion into workspace/symbols 
+     */
+    private static isAcceptableNavigationTreeItem(item: ts.NavigationTree): boolean {
+        // modules and source files should be excluded
+        if ([ts.ScriptElementKind.moduleElement, "sourcefile"].indexOf(item.kind) >= 0) {
+            return false;
+        }
+        // special items may start with ", (, [, or <
+        if (/^[<\(\[\"]/.test(item.text)) {
+            return false;
+        }
+        // magic words
+        if (["default", "constructor", "new()"].indexOf(item.text) >= 0) {
+            return false;
+        }
+        return true;
     }
 
 }
