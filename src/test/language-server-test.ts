@@ -60,7 +60,7 @@ describe('LSP', function () {
             }, {
                     contents: [{
                         language: 'typescript',
-                        value: 'const abc: 1'
+                        value: 'const abc: number'
                     }]
                 }, done);
         });
