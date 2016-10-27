@@ -345,11 +345,14 @@ export default class TypeScriptService {
 
     private flattenNavBarItem(item: ts.NavigationTree, parent: ts.NavigationTree, sourceFile: ts.SourceFile, result: SymbolInformation[], limit?: number) {
         if (!limit || result.length < limit) {
-            result.push(this.transformNavBarItem(item, parent, sourceFile));
+            const isModule = item.kind == ts.ScriptElementKind.moduleElement; 
+            if (!isModule) {
+                result.push(this.transformNavBarItem(item, parent, sourceFile));
+            }
             if (item.childItems) {
                 let i = 0;
                 while (i < item.childItems.length && (!limit || result.length < limit)) {
-                    this.flattenNavBarItem(item.childItems[i], item, sourceFile, result, limit);
+                    this.flattenNavBarItem(item.childItems[i], isModule ? null : item, sourceFile, result, limit);
                     i++;
                 }
             }
