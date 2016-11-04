@@ -18,6 +18,7 @@ program
     .version('0.0.1')
     .option('-s, --strict', 'Strict mode')
     .option('-p, --port [port]', 'LSP port (' + defaultLspPort + ')', parseInt)
+    .option('-w, --workspace [workspace]', 'workspace root')
     .parse(process.argv);
 
 const lspPort = program.port || defaultLspPort;
@@ -38,7 +39,7 @@ if (cluster.isMaster) {
 } else {
     console.error('Listening for incoming LSP connections on', lspPort);
     var server = net.createServer((socket) => {
-        let connection = new Connection(socket, socket, program.strict);
+        let connection = new Connection(socket, socket, program.strict, program.root);
         connection.start();
     });
 

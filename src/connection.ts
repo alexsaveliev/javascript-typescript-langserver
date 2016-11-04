@@ -28,7 +28,7 @@ export default class Connection {
 
     connection: IConnection;
 
-    constructor(input: any, output: any, strict: boolean) {
+    constructor(input: any, output: any, strict: boolean, root?: string) {
 
         this.connection = createConnection(input, output);
 
@@ -64,10 +64,11 @@ export default class Connection {
 
 
         this.connection.onRequest(rt.InitializeRequest.type, (params: InitializeParams): Promise<InitializeResult> => {
-            console.error('initialize', params.rootPath);
+            const wRoot = root || params.rootPath; 
+            console.error('initialize', wRoot);
             return new Promise<InitializeResult>((resolve) => {
                 if (params.rootPath) {
-                    workspaceRoot = util.uri2path(params.rootPath);
+                    workspaceRoot = util.uri2path(wRoot);
                     service = new TypeScriptService(workspaceRoot, strict, this.connection);
                     resolve({
                         capabilities: {

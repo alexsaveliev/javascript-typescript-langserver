@@ -264,12 +264,14 @@ export class ProjectManager {
         });
         // collecting all the files in workspace by making fake configuration object         
         if (!this.configs.get('')) {
+            const options: ts.CompilerOptions = {
+                module: ts.ModuleKind.CommonJS,
+                allowNonTsExtensions: false,
+                allowJs: true
+            };
+            ProjectConfiguration.tweakOptions(options);
             this.configs.set('', new ProjectConfiguration(this.localFs, '', {
-                compilerOptions: {
-                    module: ts.ModuleKind.CommonJS,
-                    allowNonTsExtensions: false,
-                    allowJs: true
-                }
+                compilerOptions: options
             }));
         }
     }
@@ -480,6 +482,7 @@ export class ProjectConfiguration {
                 if (/(^|\/)jsconfig\.json$/.test(this.configFileName)) {
                     options.allowJs = true;
                 }
+                ProjectConfiguration.tweakOptions(options);
                 this.host = new InMemoryLanguageServiceHost(this.fs.path,
                     options,
                     this.fs,
@@ -492,5 +495,9 @@ export class ProjectConfiguration {
         return this.promise;
     }
 
+    static tweakOptions(options: ts.CompilerOptions) {
+        options.skipLibCheck = true;
+        options.skipDefaultLibCheck = true;
+    }
 
 }
