@@ -39,7 +39,7 @@ if (cluster.isMaster) {
 } else {
     console.error('Listening for incoming LSP connections on', lspPort);
     var server = net.createServer((socket) => {
-        let connection = new Connection(socket, socket, program.strict, program.root);
+        let connection = new Connection(socket, socket, program.strict, program.workspace);
         connection.start();
     });
 

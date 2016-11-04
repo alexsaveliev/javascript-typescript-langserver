@@ -47,6 +47,7 @@ export class ProjectManager {
         let done = false;
 
         return new Promise<void>((resolve, reject) => {
+            const start = new Date().getTime();
             // fetch directory tree from VFS
             this.getFiles(this.root, (err, files) => {
                 // HACK (callback is called twice) 
@@ -67,6 +68,7 @@ export class ProjectManager {
 
                     // Determine and initialize sub-projects
                     this.processProjects();
+                    console.error('VFS operations performed in', (new Date().getTime() - start) / 1000.0);
                     return resolve();
 
                 });
@@ -105,8 +107,10 @@ export class ProjectManager {
             }
         });
         if (changed) {
+            const start = new Date().getTime();
             // requery program object to synchonize LanguageService's data
             config.program = config.service.getProgram();
+            console.error('sync performed in', (new Date().getTime() - start) / 1000.0); 
         }
         config.host.complete = true;
     }
