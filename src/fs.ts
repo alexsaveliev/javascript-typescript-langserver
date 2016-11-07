@@ -107,7 +107,7 @@ export class LocalFileSystem implements FileSystem {
 
         const fetch = (pattern: string): AsyncFunction<string[]> => {
             return (callback: (err?: Error, data?: string[]) => void) => {
-                glob(pattern, callback);
+                glob(pattern, {nodir: true}, callback);
             };
         }
         patterns.forEach((pattern) => {
@@ -122,7 +122,7 @@ export class LocalFileSystem implements FileSystem {
                 return {
                     uri: util.path2uri('', match)
                 };
-            }));        
+            }));
         });
     }
 
