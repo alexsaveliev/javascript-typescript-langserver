@@ -150,7 +150,7 @@ export class ProjectManager {
             this.root + '/**/*.jsx',
             this.root + '/**/*.ts',
             this.root + '/**/*.tsx',
-// TODO     this.root + '/**/package.json',
+            // TODO     this.root + '/**/package.json',
             this.root + '/**/tsconfig.json',
             this.root + '/**/jsconfig.json'
         ];
@@ -158,10 +158,13 @@ export class ProjectManager {
         this.remoteFs.findFiles(patterns, (err?: Error, result?: TextDocumentIdentifier[]) => {
             const files: string[] = [];
             if (result) {
-                console.error(result.length + ' found, fs scan complete in', (new Date().getTime() - start) / 1000.0);
                 result.forEach((fi) => {
-                    files.push(util.uri2path(fi.uri));
+                    // TODO: remove this when real glob will be implemented server-side
+                    if (/\.[tj]sx?$/.test(fi.uri) || /(^|\/)[tj]sconfig\.json$/.test(fi.uri)) {
+                        files.push(util.uri2path(fi.uri));
+                    }
                 });
+                console.error(files.length + ' found, fs scan complete in', (new Date().getTime() - start) / 1000.0);
             }
             return callback(err, files);
         });
