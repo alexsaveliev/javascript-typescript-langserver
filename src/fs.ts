@@ -1,9 +1,15 @@
 import {
-    RequestType, IConnection
+    RequestType, IConnection, TextDocumentIdentifier
 } from 'vscode-languageserver';
 
 import * as fs from 'fs';
 import * as path_ from 'path';
+import * as glob from 'glob';
+import * as async from 'async';
+import * as _ from 'lodash';
+
+import * as rt from './request-type';
+import * as util from './util';
 
 export interface FileInfo {
     name: string
@@ -14,6 +20,7 @@ export interface FileInfo {
 export interface FileSystem {
     readDir(path: string, callback: (err: Error, result?: FileInfo[]) => void)
     readFile(path: string, callback: (err: Error, result?: string) => void)
+    findFiles(patterns: string[], callback: (err: Error, result?: TextDocumentIdentifier[]) => void)
 }
 
 namespace ReadDirRequest {
@@ -37,6 +44,14 @@ export class RemoteFileSystem implements FileSystem {
             return callback(null, f)
         }, (err: Error) => {
             return callback(err)
+        })
+    }
+
+    findFiles(patterns: string[], callback: (err: Error, result?: TextDocumentIdentifier[]) => void) {
+        this.connection.sendRequest(rt.WorkspaceGlobRequest.type, { patterns: patterns }).then((result: TextDocumentIdentifier[]) => {
+            return callback(null, result);
+        }, (err: Error) => {
+            return callback(err);
         })
     }
 
@@ -84,6 +99,30 @@ export class LocalFileSystem implements FileSystem {
                 return callback(err)
             }
             return callback(null, buf.toString())
+        });
+    }
+
+    findFiles(patterns: string[], callback: (err: Error, result?: TextDocumentIdentifier[]) => void) {
+        const tasks = [];
+
+        const fetch = (pattern: string): AsyncFunction<string[]> => {
+            return (callback: (err?: Error, data?: string[]) => void) => {
+                glob(pattern, callback);
+            };
+        }
+        patterns.forEach((pattern) => {
+            tasks.push(fetch(pattern));
+        });
+
+        async.parallel(tasks, (err: Error, matches: string[][]) => {
+            if (err) {
+                return callback(err);
+            }
+            callback(null, _.flattenDepth(matches).map((match: string) => {
+                return {
+                    uri: util.path2uri('', match)
+                };
+            }));        
         });
     }
 

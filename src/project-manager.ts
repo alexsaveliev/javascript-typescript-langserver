@@ -2,7 +2,7 @@ import * as path_ from 'path';
 import * as fs_ from 'fs';
 
 import * as ts from 'typescript';
-import { IConnection } from 'vscode-languageserver';
+import { IConnection, TextDocumentIdentifier } from 'vscode-languageserver';
 import * as async from 'async';
 
 import * as FileSystem from './fs';
@@ -49,7 +49,7 @@ export class ProjectManager {
         return new Promise<void>((resolve, reject) => {
             const start = new Date().getTime();
             // fetch directory tree from VFS
-            this.getFiles(this.root, (err, files) => {
+            this.getFiles((err, files) => {
                 // HACK (callback is called twice) 
                 if (done) {
                     return;
@@ -110,7 +110,7 @@ export class ProjectManager {
             const start = new Date().getTime();
             // requery program object to synchonize LanguageService's data
             config.program = config.service.getProgram();
-            console.error('sync performed in', (new Date().getTime() - start) / 1000.0); 
+            console.error('sync performed in', (new Date().getTime() - start) / 1000.0);
         }
         config.host.complete = true;
     }
@@ -141,47 +141,30 @@ export class ProjectManager {
     /**
      * Collects all files in the given path
      */
-    getFiles(path: string, callback: (err: Error, result?: string[]) => void) {
+    getFiles(callback: (err: Error, result?: string[]) => void) {
 
         const start = new Date().getTime();
 
-        let files: string[] = [];
-        let counter: number = 0;
+        const patterns = [
+            this.root + '/**/*.js',
+            this.root + '/**/*.jsx',
+            this.root + '/**/*.ts',
+            this.root + '/**/*.tsx',
+// TODO     this.root + '/**/package.json',
+            this.root + '/**/tsconfig.json',
+            this.root + '/**/jsconfig.json'
+        ];
 
-        let cb = (err: Error, result?: FileSystem.FileInfo[]) => {
-            if (err) {
-                console.error('got error while reading dir', err);
-                return callback(err)
-            }
-            let tasks = [];
-            result.forEach((fi) => {
-                if (fi.name.indexOf('/.') >= 0) {
-                    return
-                }
-                if (fi.dir) {
-                    counter++;
-                    tasks.push(this.fetchDir(fi.name))
-                } else {
-                    if (/\.[tj]sx?$/.test(fi.name) || /(^|\/)[tj]sconfig\.json$/.test(fi.name)) {
-                        files.push(fi.name)
-                    }
-                }
-            });
-            async.parallel(tasks, (err: Error, result?: FileSystem.FileInfo[][]) => {
-                if (err) {
-                    return callback(err)
-                }
-                result.forEach((items) => {
-                    counter--;
-                    cb(null, items)
+        this.remoteFs.findFiles(patterns, (err?: Error, result?: TextDocumentIdentifier[]) => {
+            const files: string[] = [];
+            if (result) {
+                console.error(result.length + ' found, fs scan complete in', (new Date().getTime() - start) / 1000.0);
+                result.forEach((fi) => {
+                    files.push(util.uri2path(fi.uri));
                 });
-                if (counter == 0) {
-                    console.error(files.length + ' found, fs scan complete in', (new Date().getTime() - start) / 1000.0);
-                    callback(null, files)
-                }
-            })
-        };
-        this.fetchDir(path)(cb)
+            }
+            return callback(err, files);
+        });
     }
 
     /**
@@ -201,22 +184,6 @@ export class ProjectManager {
             }
         }
         return this.configs.get('');
-    }
-
-    /**
-     * @return asynchronous function that fetches directory content from VFS
-     */
-    private fetchDir(path: string): AsyncFunction<FileSystem.FileInfo[]> {
-        return (callback: (err?: Error, result?: FileSystem.FileInfo[]) => void) => {
-            this.remoteFs.readDir(path, (err?: Error, result?: FileSystem.FileInfo[]) => {
-                if (result) {
-                    result.forEach((fi) => {
-                        fi.name = path_.posix.join(path, fi.name)
-                    })
-                }
-                return callback(err, result)
-            });
-        }
     }
 
     /**

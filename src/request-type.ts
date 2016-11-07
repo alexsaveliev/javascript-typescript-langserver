@@ -86,3 +86,16 @@ export namespace WorkspaceSymbolsRequest {
         }
     };
 }
+
+export interface WorkspaceGlobParams {
+    patterns: string[];
+}
+
+export namespace WorkspaceGlobRequest {
+    export const type: vscode.RequestType<WorkspaceGlobParams, vscode.TextDocumentIdentifier[], any> = {
+        get method() {
+            return 'workspace/xglob';
+        }
+    };
+}
+

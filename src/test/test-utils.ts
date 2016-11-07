@@ -1,6 +1,7 @@
 import * as net from 'net';
 import * as os from 'os';
 import * as fs from 'fs';
+import * as path_ from 'path';
 
 import * as tmp from 'tmp';
 import * as mocha from 'mocha';
@@ -10,8 +11,11 @@ import * as vscode from 'vscode-languageserver';
 
 import Connection from '../connection';
 import {FileInfo} from '../fs';
+import * as util from '../util';
 import * as rt from '../request-type';
 import * as utils from './test-utils';
+
+const glob2re = require('glob-to-regexp');
 
 class Channel {
     server: net.Server;
@@ -133,6 +137,34 @@ function initFs(connection: Connection, memfs: any) {
             throw new Error('no such file');
         }
         return new Buffer(content).toString('base64');
+    });
+
+    connection.connection.onRequest(rt.WorkspaceGlobRequest.type, (params: rt.WorkspaceGlobParams): vscode.TextDocumentIdentifier[] => {
+
+        const matchers : RegExp[] = params.patterns.map((pattern) => {
+            return glob2re(path_.normalize(pattern.substring(2)), {globstar: true});
+        });
+
+        const matches = [];
+
+        const visit = (path: string, node : any) => {
+            if (typeof node == 'object') {
+                Object.keys(node).forEach((k) => {
+                    visit((path ? path + '/' : '') + k, node[k]);
+                });
+                return;
+            }
+
+            for (const matcher of matchers) {
+                if (matcher.test(path)) {
+                    matches.push({uri: util.path2uri('', '/' + path)});
+                    break;
+                }
+            }
+        };
+
+        visit('', memfs);
+        return matches;
     });
 }
 
