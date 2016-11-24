@@ -3,9 +3,12 @@ language: node_js
 node_js:
   - "6"
 
+before_install:
+  - npm install yarn -g
+
 install:
-  - npm install
+  - yarn install
 
 script:
-  - npm run fmt-check
-  - npm test
+  - yarn run fmt-check
+  - yarn test
