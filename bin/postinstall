@@ -16,7 +16,14 @@ if (fs.existsSync('./node_modules/vscode/bin/install')) {
 }
 
 try {
-	child_process.execSync('./node_modules/.bin/tsc || ../../node_modules/.bin/tsc', {stdio: 'inherit'});
+	if (fs.existsSync('./node_modules/.bin/tsc')) {
+		child_process.execSync(path.normalize('./node_modules/.bin/tsc'), {stdio: 'inherit'});
+	} else if (fs.existsSync('../../node_modules/.bin/tsc')) {
+		child_process.execSync(path.normalize('../../node_modules/.bin/tsc'), {stdio: 'inherit'});
+	} else {
+		console.log('No tsc compiler detected');
+		process.exit(1);
+	}
 } catch (e) {
 	process.exit(1);
 }
