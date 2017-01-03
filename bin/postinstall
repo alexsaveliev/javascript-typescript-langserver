@@ -15,4 +15,8 @@ if (fs.existsSync('./node_modules/vscode/bin/install')) {
 	process.exit(1);
 }
 
-child_process.exec('./node_modules/.bin/tsc || ../../node_modules/.bin/tsc');
+try {
+	child_process.execSync('./node_modules/.bin/tsc || ../../node_modules/.bin/tsc', {stdio: 'inherit'});
+} catch (e) {
+	process.exit(1);
+}

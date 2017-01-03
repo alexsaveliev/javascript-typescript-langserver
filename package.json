@@ -25,10 +25,10 @@
         "vscode": "1.x.x"
     },
     "scripts": {
-        "test": "bash bin/test",
-        "fmt-check": "bash bin/fmt-check",
-        "fmt": "bash bin/fmt",
-        "postinstall": "bin/postinstall"
+        "test": "node bin/test",
+        "fmt-check": "node bin/fmt-check",
+        "fmt": "node bin/fmt",
+        "postinstall": "node bin/postinstall"
     },
     "dependencies": {
         "@types/async": "^2.0.32",
