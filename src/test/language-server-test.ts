@@ -1572,6 +1572,22 @@ declare function resolve(id: string, cb: resolveCallback): void;\n\
 					'missing': {
 						'a.ts': '/// <reference path="b.ts"/>\n/// <reference path="missing.ts"/>\nnamespace t {\n    function foo() : Bar {\n        return null;\n    }\n}',
 						'b.ts': 'namespace t {\n    export interface Bar {\n        id?: number;\n    }}'
+					},
+					'backslashes': {
+						'bar.ts': 'namespace n {export interface bar {}}',
+						'tweedledee': {
+							'main.ts': `/// <reference path="..\\bar.ts"/>
+/// <reference path="..\\tweedledum/foo.ts"/>
+namespace n {
+const a : foo = null;
+const b : bar = null;
+console.log(a, b);
+}`,
+						},
+						'tweedledum': {
+							'foo.ts': 'namespace n {export interface foo {}}',
+						}
+
 					}
 				}, done);
 			});
@@ -1679,6 +1695,52 @@ declare function resolve(id: string, cb: resolveCallback): void;\n\
 							end: {
 								line: 1,
 								character: 23
+							}
+						}
+					}, done);
+			});
+			it('should handle mixed slashes in references', function (done: (err?: Error) => void) {
+				utils.definition({
+					textDocument: {
+						uri: 'file:///backslashes/tweedledee/main.ts'
+					},
+					position: {
+						line: 3,
+						character: 10
+					}
+				}, {
+						uri: 'file:///backslashes/tweedledum/foo.ts',
+						range: {
+							start: {
+								line: 0,
+								character: 13
+							},
+							end: {
+								line: 0,
+								character: 36
+							}
+						}
+					}, done);
+			});
+			it('should handle backslashes in references', function (done: (err?: Error) => void) {
+				utils.definition({
+					textDocument: {
+						uri: 'file:///backslashes/tweedledee/main.ts'
+					},
+					position: {
+						line: 4,
+						character: 10
+					}
+				}, {
+						uri: 'file:///backslashes/bar.ts',
+						range: {
+							start: {
+								line: 0,
+								character: 13
+							},
+							end: {
+								line: 0,
+								character: 36
 							}
 						}
 					}, done);

@@ -256,7 +256,6 @@ export class ProjectManager {
 			return Promise.resolve();
 		}
 		fileNames.forEach((f) => seen.add(f));
-
 		const absFileNames = fileNames.map((f) => util.normalizePath(util.resolve(this.root, f)));
 		await this.ensureFiles(absFileNames);
 
@@ -280,14 +279,14 @@ export class ProjectManager {
 					importFiles.add(resolved.resolvedModule.resolvedFileName);
 				}
 				const resolver = !this.strict && os.platform() == 'win32' ? path_ : path_.posix;
+				const currentDir = resolver.dirname(fileName);
 				for (const ref of info.referencedFiles) {
 					// Resolving triple slash references relative to current file
 					// instead of using module resolution host because it behaves
 					// differently in "nodejs" mode
+					const refFile = ref.fileName; // util.normalizePath(ref.fileName);
 					const refFileName = util.normalizePath(path_.relative(this.root,
-						resolver.resolve(this.root,
-							resolver.dirname(fileName),
-							ref.fileName)));
+						resolver.resolve(this.root, currentDir, refFile)));
 					importFiles.add(refFileName);
 				}
 			}));
@@ -709,7 +708,7 @@ export class InMemoryFileSystem implements ts.ParseConfigHost, ts.ModuleResoluti
 		return ret;
 	}
 
-	trace(message: string) {
+	trace(message: string) {           
 		console.error(message);
 	}
 }
