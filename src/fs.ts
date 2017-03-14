@@ -28,6 +28,8 @@ export class RemoteFileSystem implements FileSystem {
 
 	private workspaceFilesPromise?: Promise<string[]>;
 
+	private fetched: Set<string> = new Set<string>();
+
 	constructor(private client: LanguageClientHandler) {}
 
 	/**
@@ -51,7 +53,11 @@ export class RemoteFileSystem implements FileSystem {
 	/**
 	 * The content request is sent from the server to the client to request the current content of any text document. This allows language servers to operate without accessing the file system directly.
 	 */
-	async getTextDocumentContent(uri: string, token = CancellationToken.None): Promise<string> {
+	async getTextDocumentContent(uri: string, token = CancellationToken.None): Promise<string> {		
+		if (this.fetched.has(uri)) {
+			throw new Error("Already there " + uri);
+		}
+		this.fetched.add(uri);
 		const textDocument = await this.client.getTextDocumentContent({ textDocument: { uri } }, token);
 		return textDocument.text;
 	}
